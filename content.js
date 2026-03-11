@@ -12,7 +12,8 @@
     enabled: true,
     keywords: [],
     blockedCount: 0,
-    blockThreshold: BLOCK_THRESHOLD  // 可自定义阈值
+    blockThreshold: BLOCK_THRESHOLD,
+    whitelist: ['grok']  // 白名单账号（不区分大小写）
   };
 
   let blockedAccounts = new Set();
@@ -150,6 +151,12 @@
     const handle = getAccountHandle(tweetEl);
     const tweetUrl = getTweetUrl(tweetEl);
 
+    // 白名单账号跳过
+    if (handle && config.whitelist && config.whitelist.some(w => w.toLowerCase() === handle.toLowerCase())) {
+      console.log(`[X Auto Blocker] @${handle} 在白名单中，跳过`);
+      return;
+    }
+
     // 已屏蔽账号：直接隐藏，不重复操作
     if (handle && blockedAccounts.has(handle)) {
       tweetEl.style.display = 'none';
@@ -257,6 +264,26 @@
 
     if (msg.type === 'GET_KEYWORDS') {
       sendResponse({ keywords: config.keywords });
+    }
+
+    if (msg.type === 'GET_WHITELIST') {
+      sendResponse({ whitelist: config.whitelist || [] });
+    }
+
+    if (msg.type === 'ADD_WHITELIST') {
+      if (!config.whitelist) config.whitelist = [];
+      const handle = msg.handle.replace(/^@/, '').trim();
+      if (handle && !config.whitelist.some(w => w.toLowerCase() === handle.toLowerCase())) {
+        config.whitelist.push(handle);
+        saveConfig();
+      }
+      sendResponse({ whitelist: config.whitelist });
+    }
+
+    if (msg.type === 'REMOVE_WHITELIST') {
+      config.whitelist = (config.whitelist || []).filter(w => w.toLowerCase() !== msg.handle.toLowerCase());
+      saveConfig();
+      sendResponse({ whitelist: config.whitelist });
     }
 
     if (msg.type === 'GET_TRIGGER_LOG') {

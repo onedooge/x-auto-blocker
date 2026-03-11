@@ -226,6 +226,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="settings">⚙️ 设置</div>
     <div class="tab" data-tab="keywords">🔑 关键词</div>
+    <div class="tab" data-tab="whitelist">🛡️ 白名单</div>
     <div class="tab" data-tab="blocked-records">🚫 屏蔽</div>
     <div class="tab" data-tab="hidden-records">👁️ 隐藏</div>
   </div>
@@ -272,6 +273,18 @@
     </div>
   </div>
   <div class="toast" id="toast"></div>
+
+  <!-- Whitelist -->
+  <div class="tab-content" id="tab-whitelist">
+    <div class="section">
+      <div class="section-title">白名单账号（不会被隐藏或屏蔽）</div>
+      <div class="kw-input-row">
+        <input class="kw-input" id="wlInput" type="text" placeholder="输入账号名，如 grok">
+        <button class="btn-add" id="wlAdd">添加</button>
+      </div>
+      <div class="kw-list" id="wlList"></div>
+    </div>
+  </div>
 
   <!-- Blocked Records -->
   <div class="tab-content" id="tab-blocked-records">

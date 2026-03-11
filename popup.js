@@ -36,6 +36,9 @@ async function init() {
     document.getElementById('keywordCount').textContent = kwRes.keywords.length;
   }
 
+  const wlRes = await sendToContent({ type: 'GET_WHITELIST' });
+  if (wlRes?.whitelist) renderWhitelist(wlRes.whitelist);
+
   if (recRes?.records) {
     allRecords = recRes.records;
     updateStats();
@@ -118,6 +121,42 @@ function renderAllRecordLists() {
     allRecords, 'hidden'
   );
 }
+
+function renderWhitelist(whitelist) {
+  const list = document.getElementById('wlList');
+  list.innerHTML = '';
+  if (whitelist.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:#4b5563;padding:4px 0;">暂无白名单账号</div>';
+    return;
+  }
+  whitelist.forEach(handle => {
+    const tag = document.createElement('div');
+    tag.className = 'kw-tag';
+    tag.style.borderColor = '#22c55e44';
+    tag.innerHTML = `<span style="color:#22c55e">@${escapeHtml(handle)}</span><button class="kw-remove" data-handle="${escapeHtml(handle)}">×</button>`;
+    list.appendChild(tag);
+  });
+  list.querySelectorAll('.kw-remove').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const res = await sendToContent({ type: 'REMOVE_WHITELIST', handle: btn.getAttribute('data-handle') });
+      if (res?.whitelist) renderWhitelist(res.whitelist);
+    });
+  });
+}
+
+async function addWhitelist() {
+  const input = document.getElementById('wlInput');
+  const handle = input.value.replace(/^@/, '').trim();
+  if (!handle) return;
+  const res = await sendToContent({ type: 'ADD_WHITELIST', handle });
+  if (res?.whitelist) {
+    renderWhitelist(res.whitelist);
+    input.value = '';
+    showToast(`✅ 已添加 @${handle} 到白名单`, '#22c55e');
+  }
+}
+document.getElementById('wlAdd').addEventListener('click', addWhitelist);
+document.getElementById('wlInput').addEventListener('keydown', e => { if (e.key === 'Enter') addWhitelist(); });
 
 function renderKeywords(keywords) {
   const list = document.getElementById('kwList');
