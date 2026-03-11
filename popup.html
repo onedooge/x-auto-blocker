@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>X Auto Blocker</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 340px;
+      font-family: 'Noto Sans SC', sans-serif;
+      background: #0f1117;
+      color: #e8eaf0;
+      font-size: 13px;
+    }
+
+    .header {
+      background: #131720;
+      padding: 14px 16px;
+      border-bottom: 1px solid #1e2535;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .logo {
+      width: 30px; height: 30px;
+      background: linear-gradient(135deg, #e0415a, #c0203a);
+      border-radius: 8px; display: flex; align-items: center; justify-content: center;
+      font-size: 15px; box-shadow: 0 2px 8px rgba(224,65,90,0.4);
+    }
+    .title { font-size: 14px; font-weight: 700; color: #fff; }
+    .subtitle { font-size: 10px; color: #6b7280; margin-top: 1px; }
+
+    .toggle { position: relative; width: 36px; height: 20px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; background: #2a2f3e;
+      border-radius: 20px; cursor: pointer; transition: .25s; border: 1px solid #3a3f50;
+    }
+    .slider:before {
+      content: ''; position: absolute; width: 14px; height: 14px;
+      left: 2px; bottom: 2px; background: #6b7280; border-radius: 50%; transition: .25s;
+    }
+    input:checked + .slider { background: #e0415a; border-color: #e0415a; }
+    input:checked + .slider:before { transform: translateX(16px); background: #fff; }
+
+    .stats { display: flex; background: #131720; border-bottom: 1px solid #1e2535; }
+    .stat { flex: 1; padding: 10px; text-align: center; border-right: 1px solid #1e2535; }
+    .stat:last-child { border-right: none; }
+    .stat-num { font-size: 18px; font-weight: 700; color: #e0415a; line-height: 1; }
+    .stat-label { font-size: 10px; color: #6b7280; margin-top: 2px; }
+
+    .tabs { display: flex; border-bottom: 1px solid #1e2535; background: #0f1117; }
+    .tab {
+      flex: 1; padding: 9px 4px; text-align: center; font-size: 12px; font-weight: 500;
+      color: #6b7280; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s;
+    }
+    .tab.active { color: #e0415a; border-bottom-color: #e0415a; }
+    .tab:hover:not(.active) { color: #9ca3af; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .section { padding: 12px 14px; border-bottom: 1px solid #1e2535; }
+    .section-title { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+    .option-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
+    .option-name { font-size: 12px; color: #d1d5db; font-weight: 500; }
+    .option-desc { font-size: 10px; color: #6b7280; margin-top: 1px; }
+
+    .kw-input-row { display: flex; gap: 7px; margin-bottom: 9px; }
+    .kw-input {
+      flex: 1; background: #1a1f2e; border: 1px solid #2a2f3e; border-radius: 6px;
+      padding: 6px 9px; color: #e8eaf0; font-size: 12px; outline: none;
+      transition: border-color .2s; font-family: inherit;
+    }
+    .kw-input:focus { border-color: #e0415a; }
+    .kw-input::placeholder { color: #4b5563; }
+    .btn-add {
+      background: #e0415a; border: none; border-radius: 6px; color: #fff;
+      padding: 6px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: background .2s;
+    }
+    .btn-add:hover { background: #c0203a; }
+    .kw-list { display: flex; flex-wrap: wrap; gap: 5px; max-height: 130px; overflow-y: auto; }
+    .kw-list::-webkit-scrollbar { width: 3px; }
+    .kw-list::-webkit-scrollbar-thumb { background: #2a2f3e; border-radius: 4px; }
+    .kw-tag {
+      display: flex; align-items: center; gap: 3px;
+      background: #1a1f2e; border: 1px solid #2a2f3e; border-radius: 20px;
+      padding: 2px 9px; font-size: 11px; color: #9ca3af;
+      animation: fadeIn .2s ease;
+    }
+    @keyframes fadeIn { from{opacity:0;transform:scale(.85)} to{opacity:1;transform:scale(1)} }
+    .kw-remove {
+      background: none; border: none; color: #4b5563; cursor: pointer;
+      font-size: 13px; padding: 0; transition: color .15s;
+    }
+    .kw-remove:hover { color: #e0415a; }
+
+    /* Backup */
+    .backup-row { display: flex; gap: 7px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #1e2535; }
+    .btn-backup {
+      flex: 1; background: #1a1f2e; border: 1px solid #2a2f3e; border-radius: 6px;
+      color: #9ca3af; padding: 6px 8px; font-size: 11px; font-weight: 500;
+      cursor: pointer; font-family: inherit; transition: all .2s; text-align: center;
+    }
+    .btn-backup:hover { border-color: #e0415a; color: #e0415a; }
+    .btn-backup.import:hover { border-color: #22c55e; color: #22c55e; }
+    .toast {
+      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+      background: #1a1f2e; border: 1px solid #2a2f3e; border-radius: 8px;
+      padding: 7px 14px; font-size: 12px; color: #d1d5db;
+      opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap;
+    }
+    .toast.show { opacity: 1; }
+
+    /* Records */
+    .records-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 14px; border-bottom: 1px solid #1e2535;
+    }
+    .records-count { font-size: 11px; color: #6b7280; }
+
+    /* Threshold */
+    .threshold-btn {
+      width: 24px; height: 24px; border-radius: 6px;
+      background: #1a1f2e; border: 1px solid #2a2f3e;
+      color: #9ca3af; font-size: 15px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-family: inherit; transition: all .2s; line-height: 1;
+    }
+    .threshold-btn:hover { border-color: #e0415a; color: #e0415a; }
+    .threshold-val { font-size: 16px; font-weight: 700; color: #e0415a; min-width: 24px; text-align: center; }
+    .threshold-tip { font-size: 11px; color: #6b7280; margin-top: 8px; padding: 6px 10px; background: #1a1f2e; border-radius: 6px; line-height: 1.5; }
+    .btn-clear {
+      background: none; border: 1px solid #2a2f3e; border-radius: 6px;
+      color: #6b7280; padding: 3px 9px; font-size: 11px;
+      cursor: pointer; font-family: inherit; transition: all .2s;
+    }
+    .btn-clear:hover { border-color: #e0415a; color: #e0415a; }
+
+    .records-list { max-height: 280px; overflow-y: auto; }
+    .records-list::-webkit-scrollbar { width: 3px; }
+    .records-list::-webkit-scrollbar-thumb { background: #2a2f3e; border-radius: 4px; }
+
+    .record-item {
+      padding: 8px 14px; border-bottom: 1px solid #1a1f2e;
+      display: flex; gap: 9px; align-items: flex-start;
+      animation: fadeIn .2s ease; transition: background .15s;
+    }
+    .record-item.clickable { cursor: pointer; }
+    .record-item.clickable:hover { background: #1a1f2e; }
+    .record-item:last-child { border-bottom: none; }
+    .record-badge {
+      flex-shrink: 0; padding: 2px 7px; border-radius: 20px;
+      font-size: 10px; font-weight: 700; margin-top: 1px;
+    }
+    .badge-blocked { background: #e0415a22; color: #e0415a; border: 1px solid #e0415a44; }
+    .badge-hidden  { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; }
+    .record-body { flex: 1; min-width: 0; }
+    .record-handle { font-size: 12px; font-weight: 600; color: #d1d5db; }
+    .link-hint { font-size: 10px; color: #6b7280; margin-left: 2px; }
+    .record-text { font-size: 11px; color: #6b7280; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .record-time { font-size: 10px; color: #4b5563; margin-top: 2px; }
+    .record-keywords { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .kw-hit {
+      background: #f59e0b22; border: 1px solid #f59e0b66;
+      color: #f59e0b; border-radius: 4px;
+      padding: 1px 6px; font-size: 10px; font-weight: 600;
+    }
+    .trigger-progress {
+      height: 3px; background: #1e2535; border-radius: 2px; margin-top: 5px; overflow: hidden;
+    }
+    .trigger-bar { height: 100%; background: linear-gradient(90deg, #f59e0b, #e0415a); border-radius: 2px; transition: width .3s; }
+    .trigger-label { font-size: 10px; color: #6b7280; margin-top: 2px; }
+
+    .empty-state { padding: 36px 14px; text-align: center; color: #4b5563; font-size: 12px; }
+    .empty-icon { font-size: 26px; margin-bottom: 8px; }
+
+    .footer {
+      padding: 9px 14px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .btn-reset {
+      background: none; border: 1px solid #2a2f3e; border-radius: 6px;
+      color: #6b7280; padding: 4px 9px; font-size: 11px;
+      cursor: pointer; font-family: inherit; transition: all .2s;
+    }
+    .btn-reset:hover { border-color: #e0415a; color: #e0415a; }
+    .status-dot { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #6b7280; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: #4b5563; }
+    .dot.active { background: #22c55e; box-shadow: 0 0 6px #22c55e; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">🛡️</div>
+      <div>
+        <div class="title">X Auto Blocker</div>
+        <div class="subtitle">自动屏蔽不当内容账号</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:11px;color:#6b7280;" id="enableLabel">开启</span>
+      <label class="toggle"><input type="checkbox" id="enableToggle" checked><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-num" id="blockedCount">0</div>
+      <div class="stat-label">已屏蔽</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num" id="hiddenCount">0</div>
+      <div class="stat-label">已隐藏</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num" id="keywordCount">0</div>
+      <div class="stat-label">关键词</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="settings">⚙️ 设置</div>
+    <div class="tab" data-tab="keywords">🔑 关键词</div>
+    <div class="tab" data-tab="blocked-records">🚫 屏蔽</div>
+    <div class="tab" data-tab="hidden-records">👁️ 隐藏</div>
+  </div>
+
+  <!-- Settings -->
+  <div class="tab-content active" id="tab-settings">
+    <div class="section">
+      <div class="section-title">屏蔽规则</div>
+      <div class="option-row">
+        <div>
+          <div class="option-name">自动屏蔽阈值</div>
+          <div class="option-desc">24小时内触发次数达到后自动屏蔽</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="threshold-btn" id="thresholdDown">−</button>
+          <span class="threshold-val" id="thresholdVal">10</span>
+          <button class="threshold-btn" id="thresholdUp">+</button>
+        </div>
+      </div>
+      <div class="threshold-tip" id="thresholdTip">默认隐藏推文，触发 10 次后自动屏蔽账号</div>
+    </div>
+    <div class="footer">
+      <button class="btn-reset" id="resetBtn">重置统计</button>
+      <div class="status-dot">
+        <div class="dot" id="statusDot"></div>
+        <span id="statusText">未连接</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keywords -->
+  <div class="tab-content" id="tab-keywords">
+    <div class="section">
+      <div class="kw-input-row">
+        <input class="kw-input" id="kwInput" type="text" placeholder="添加关键词...">
+        <button class="btn-add" id="kwAdd">添加</button>
+      </div>
+      <div class="kw-list" id="kwList"></div>
+      <div class="backup-row">
+        <button class="btn-backup" id="exportBtn">⬇️ 导出备份</button>
+        <button class="btn-backup import" id="importBtn">⬆️ 导入恢复</button>
+        <input type="file" id="importFile" accept=".json,.txt" style="display:none">
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <!-- Blocked Records -->
+  <div class="tab-content" id="tab-blocked-records">
+    <div class="records-toolbar">
+      <span class="records-count" id="blockedRecordsCount">0 条记录</span>
+      <button class="btn-clear" id="clearBlockedBtn">清空</button>
+    </div>
+    <div class="records-list" id="blockedRecordsList"></div>
+  </div>
+
+  <!-- Hidden Records -->
+  <div class="tab-content" id="tab-hidden-records">
+    <div class="records-toolbar">
+      <span class="records-count" id="hiddenRecordsCount">0 条记录</span>
+      <button class="btn-clear" id="clearHiddenBtn">清空</button>
+    </div>
+    <div class="records-list" id="hiddenRecordsList"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
