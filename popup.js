@@ -25,6 +25,7 @@ async function init() {
     document.getElementById('enableToggle').checked = status.enabled;
     setEnableLabel(status.enabled);
     const threshold = status.blockThreshold || 10;
+    currentThreshold = threshold;
     document.getElementById('thresholdVal').textContent = threshold;
     updateThresholdTip(threshold);
   } else {
@@ -77,7 +78,7 @@ function renderRecordList(listEl, countEl, records, action) {
   }
 
   listEl.innerHTML = filtered.map(r => {
-    const threshold = 10;
+    const threshold = currentThreshold || 10;
     const count = r.triggerCount || 0;
     const pct = action === 'hidden' && count ? Math.min(100, Math.round(count / threshold * 100)) : 0;
     const progressHtml = action === 'hidden' && count ? `
@@ -157,6 +158,14 @@ async function addWhitelist() {
 }
 document.getElementById('wlAdd').addEventListener('click', addWhitelist);
 document.getElementById('wlInput').addEventListener('keydown', e => { if (e.key === 'Enter') addWhitelist(); });
+
+// Enable toggle
+document.getElementById('enableToggle').addEventListener('change', async (e) => {
+  const enabled = e.target.checked;
+  setEnableLabel(enabled);
+  await sendToContent({ type: 'UPDATE_CONFIG', config: { enabled } });
+  showToast(enabled ? '✅ 已开启自动屏蔽' : '⏸ 已暂停', enabled ? '#22c55e' : '#f59e0b');
+});
 
 function renderKeywords(keywords) {
   const list = document.getElementById('kwList');
