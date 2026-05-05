@@ -27,6 +27,23 @@ async function getKeywordsAny() {
   const cfg = await getStoredConfig();
   return cfg.keywords || [];
 }
+async function getWhitelistAny() {
+  const res = await sendToContent({ type: 'GET_WHITELIST' });
+  if (res?.whitelist) return res.whitelist;
+  const cfg = await getStoredConfig();
+  return cfg.whitelist || [];
+}
+async function applyKeywords(keywords) {
+  await setStoredConfig({ keywords });
+  await sendToContent({ type: 'RELOAD_CONFIG' });
+  renderKeywords(keywords);
+  document.getElementById('keywordCount').textContent = keywords.length;
+}
+async function applyWhitelist(whitelist) {
+  await setStoredConfig({ whitelist });
+  await sendToContent({ type: 'RELOAD_CONFIG' });
+  renderWhitelist(whitelist);
+}
 
 async function init() {
   const status = await sendToContent({ type: 'GET_STATUS' });
@@ -157,8 +174,9 @@ function renderWhitelist(whitelist) {
   });
   list.querySelectorAll('.kw-remove').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const res = await sendToContent({ type: 'REMOVE_WHITELIST', handle: btn.getAttribute('data-handle') });
-      if (res?.whitelist) renderWhitelist(res.whitelist);
+      const target = btn.getAttribute('data-handle');
+      const existing = await getWhitelistAny();
+      await applyWhitelist(existing.filter(w => w.toLowerCase() !== target.toLowerCase()));
     });
   });
 }
@@ -167,12 +185,11 @@ async function addWhitelist() {
   const input = document.getElementById('wlInput');
   const handle = input.value.replace(/^@/, '').trim();
   if (!handle) return;
-  const res = await sendToContent({ type: 'ADD_WHITELIST', handle });
-  if (res?.whitelist) {
-    renderWhitelist(res.whitelist);
-    input.value = '';
-    showToast(`✅ 已添加 @${handle} 到白名单`, '#22c55e');
-  }
+  const existing = await getWhitelistAny();
+  if (existing.some(w => w.toLowerCase() === handle.toLowerCase())) { input.value = ''; return; }
+  await applyWhitelist([handle, ...existing]);
+  input.value = '';
+  showToast(`✅ 已添加 @${handle} 到白名单`, '#22c55e');
 }
 document.getElementById('wlAdd').addEventListener('click', addWhitelist);
 document.getElementById('wlInput').addEventListener('keydown', e => { if (e.key === 'Enter') addWhitelist(); });
@@ -188,11 +205,9 @@ function renderKeywords(keywords) {
   });
   list.querySelectorAll('.kw-remove').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const res = await sendToContent({ type: 'REMOVE_KEYWORD', keyword: btn.getAttribute('data-kw') });
-      if (res?.keywords) {
-        renderKeywords(res.keywords);
-        document.getElementById('keywordCount').textContent = res.keywords.length;
-      }
+      const target = btn.getAttribute('data-kw');
+      const existing = await getKeywordsAny();
+      await applyKeywords(existing.filter(k => k !== target));
     });
   });
 }
@@ -258,12 +273,10 @@ async function addKeyword() {
   const input = document.getElementById('kwInput');
   const kw = input.value.trim();
   if (!kw) return;
-  const res = await sendToContent({ type: 'ADD_KEYWORD', keyword: kw });
-  if (res?.keywords) {
-    renderKeywords(res.keywords);
-    document.getElementById('keywordCount').textContent = res.keywords.length;
-    input.value = '';
-  }
+  const existing = await getKeywordsAny();
+  if (existing.includes(kw)) { input.value = ''; return; }
+  await applyKeywords([kw, ...existing]); // 新加的放最前
+  input.value = '';
 }
 document.getElementById('kwAdd').addEventListener('click', addKeyword);
 document.getElementById('kwInput').addEventListener('keydown', e => { if (e.key === 'Enter') addKeyword(); });
