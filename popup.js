@@ -361,6 +361,127 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
   showToast(`✅ 导入 ${newOnes.length} 个新关键词`, '#22c55e');
 });
 
+// ==================== 全部备份 / 恢复 ====================
+document.getElementById('exportAllBtn').addEventListener('click', async () => {
+  const stored = await chrome.storage.local.get(['config', 'blockedAccounts', 'records', 'triggerLog']);
+  const data = {
+    type: 'full',
+    version: '1.0',
+    exportTime: new Date().toISOString(),
+    config: stored.config || {},
+    blockedAccounts: stored.blockedAccounts || [],
+    records: stored.records || [],
+    triggerLog: stored.triggerLog || {}
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const date = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `x-blocker-full-${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  const kwCount = data.config.keywords?.length || 0;
+  const recCount = data.records.length;
+  showToast(`✅ 全部备份已导出（${kwCount}词 / ${recCount}条记录）`, '#22c55e');
+});
+
+document.getElementById('importAllBtn').addEventListener('click', () => {
+  document.getElementById('importAllFile').click();
+});
+
+document.getElementById('importAllFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+
+  let json;
+  try { json = JSON.parse(await file.text()); }
+  catch { showToast('❌ JSON 格式错误', '#e0415a'); return; }
+
+  if (json.type !== 'full') {
+    showToast('❌ 不是全部备份文件，请用「关键词」标签的导入', '#e0415a');
+    return;
+  }
+
+  const stored = await chrome.storage.local.get(['config', 'blockedAccounts', 'records', 'triggerLog']);
+  const curConfig = stored.config || {};
+  const curBlocked = stored.blockedAccounts || [];
+  const curRecords = stored.records || [];
+  const curTrigger = stored.triggerLog || {};
+
+  const impConfig = json.config || {};
+  const impBlocked = json.blockedAccounts || [];
+  const impRecords = json.records || [];
+  const impTrigger = json.triggerLog || {};
+
+  // 关键词去重并集（导入的放最前）
+  const curKw = curConfig.keywords || [];
+  const kwSet = new Set(curKw);
+  const newKw = (impConfig.keywords || []).filter(k => !kwSet.has(k));
+  const mergedKw = [...newKw, ...curKw];
+
+  // 白名单（不区分大小写并集）
+  const curWl = curConfig.whitelist || [];
+  const wlLower = new Set(curWl.map(w => w.toLowerCase()));
+  const newWl = (impConfig.whitelist || []).filter(w => !wlLower.has(w.toLowerCase()));
+  const mergedWl = [...newWl, ...curWl];
+
+  // 已屏蔽账号集合并集
+  const mergedBlockedSet = new Set([...curBlocked, ...impBlocked]);
+  const mergedBlocked = [...mergedBlockedSet];
+
+  // 记录按 id 去重，时间倒序，限 500
+  const recIds = new Set(curRecords.map(r => r.id));
+  const newRecs = impRecords.filter(r => !recIds.has(r.id));
+  const mergedRecords = [...curRecords, ...newRecs]
+    .sort((a, b) => new Date(b.time) - new Date(a.time))
+    .slice(0, 500);
+
+  // 触发日志合并 + 24h 过滤
+  const now = Date.now();
+  const WINDOW = 24 * 60 * 60 * 1000;
+  const mergedTrigger = { ...curTrigger };
+  for (const [h, times] of Object.entries(impTrigger)) {
+    const set = new Set([...(mergedTrigger[h] || []), ...times]);
+    mergedTrigger[h] = [...set].filter(t => now - t < WINDOW);
+  }
+  for (const h of Object.keys(mergedTrigger)) {
+    mergedTrigger[h] = (mergedTrigger[h] || []).filter(t => now - t < WINDOW);
+    if (mergedTrigger[h].length === 0) delete mergedTrigger[h];
+  }
+
+  const newConfig = {
+    ...curConfig,
+    ...impConfig,
+    keywords: mergedKw,
+    whitelist: mergedWl,
+    blockThreshold: impConfig.blockThreshold || curConfig.blockThreshold || 10,
+    blockedCount: mergedBlocked.length
+  };
+
+  await chrome.storage.local.set({
+    config: newConfig,
+    blockedAccounts: mergedBlocked,
+    records: mergedRecords,
+    triggerLog: mergedTrigger
+  });
+  await sendToContent({ type: 'RELOAD_CONFIG' });
+
+  // 刷新 UI
+  allRecords = mergedRecords;
+  renderKeywords(mergedKw);
+  renderWhitelist(mergedWl);
+  document.getElementById('keywordCount').textContent = mergedKw.length;
+  document.getElementById('thresholdVal').textContent = newConfig.blockThreshold;
+  currentThreshold = newConfig.blockThreshold;
+  updateThresholdTip(newConfig.blockThreshold);
+  updateStats();
+  renderAllRecordLists();
+
+  showToast(`✅ 已合并 +${newKw.length}词 +${newRecs.length}记录 +${newWl.length}白名单`, '#22c55e');
+});
+
 // Reset & Clear all
 document.getElementById('resetBtn').addEventListener('click', async () => {
   if (!confirm('确认重置所有统计数据？')) return;

@@ -339,6 +339,15 @@
       config = { ...config, ...changes.config.newValue };
       scanExistingTweets();
     }
+    if (changes.blockedAccounts?.newValue) {
+      blockedAccounts = new Set(changes.blockedAccounts.newValue);
+    }
+    if (changes.records?.newValue) {
+      records = changes.records.newValue;
+    }
+    if (changes.triggerLog?.newValue) {
+      triggerLog = changes.triggerLog.newValue;
+    }
   });
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

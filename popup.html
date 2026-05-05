@@ -248,6 +248,17 @@
       </div>
       <div class="threshold-tip" id="thresholdTip">默认隐藏推文，触发 10 次后自动屏蔽账号</div>
     </div>
+    <div class="section">
+      <div class="section-title">数据备份</div>
+      <div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:9px;">
+        导出全部插件数据（关键词、白名单、记录、设置），换浏览器或升级前备份用
+      </div>
+      <div class="backup-row" style="margin-top:0;padding-top:0;border-top:none;">
+        <button class="btn-backup" id="exportAllBtn">⬇️ 全部备份</button>
+        <button class="btn-backup import" id="importAllBtn">⬆️ 全部恢复</button>
+        <input type="file" id="importAllFile" accept=".json" style="display:none">
+      </div>
+    </div>
     <div class="footer">
       <button class="btn-reset" id="resetBtn">重置统计</button>
       <div class="status-dot">
