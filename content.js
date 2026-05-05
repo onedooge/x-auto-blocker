@@ -249,7 +249,7 @@
 
     if (msg.type === 'ADD_KEYWORD') {
       if (!config.keywords.includes(msg.keyword)) {
-        config.keywords.push(msg.keyword);
+        config.keywords.unshift(msg.keyword); // 新增的放最前面
         saveConfig();
         scanExistingTweets();
       }

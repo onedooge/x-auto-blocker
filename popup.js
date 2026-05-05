@@ -337,7 +337,7 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
 
   if (newOnes.length === 0) { showToast('全部关键词已存在，无需导入', '#f59e0b'); return; }
 
-  const merged = [...existingKw, ...newOnes];
+  const merged = [...newOnes, ...existingKw]; // 新导入的放最前面
   await setStoredConfig({ keywords: merged });
 
   // 顺便通知 content script（如果当前 tab 是 x.com 则即时生效；不是也没事）
