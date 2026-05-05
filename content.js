@@ -320,7 +320,25 @@
       sendResponse({ ok: true });
     }
 
+    if (msg.type === 'RELOAD_CONFIG') {
+      chrome.storage.local.get('config').then(stored => {
+        if (stored.config) config = { ...config, ...stored.config };
+        scanExistingTweets();
+        sendResponse({ ok: true });
+      });
+      return true;
+    }
+
     return true;
+  });
+
+  // 当 popup 直接写 storage（如导入备份），同步到运行时配置
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes.config?.newValue) {
+      config = { ...config, ...changes.config.newValue };
+      scanExistingTweets();
+    }
   });
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

@@ -10,6 +10,24 @@ async function sendToContent(msg) {
   } catch (e) { return null; }
 }
 
+// 直接读写 storage，绕开"必须激活 x.com tab"的限制
+async function getStoredConfig() {
+  const stored = await chrome.storage.local.get('config');
+  return stored.config || {};
+}
+async function setStoredConfig(patch) {
+  const cfg = await getStoredConfig();
+  const merged = { ...cfg, ...patch };
+  await chrome.storage.local.set({ config: merged });
+  return merged;
+}
+async function getKeywordsAny() {
+  const res = await sendToContent({ type: 'GET_KEYWORDS' });
+  if (res?.keywords) return res.keywords;
+  const cfg = await getStoredConfig();
+  return cfg.keywords || [];
+}
+
 async function init() {
   const status = await sendToContent({ type: 'GET_STATUS' });
   const kwRes  = await sendToContent({ type: 'GET_KEYWORDS' });
@@ -31,13 +49,14 @@ async function init() {
     statusText.textContent = '请打开 X.com';
   }
 
-  if (kwRes?.keywords) {
-    renderKeywords(kwRes.keywords);
-    document.getElementById('keywordCount').textContent = kwRes.keywords.length;
-  }
+  // 关键词：优先从 content 拿，没有则从 storage 兜底
+  const keywords = kwRes?.keywords || (await getStoredConfig()).keywords || [];
+  renderKeywords(keywords);
+  document.getElementById('keywordCount').textContent = keywords.length;
 
   const wlRes = await sendToContent({ type: 'GET_WHITELIST' });
-  if (wlRes?.whitelist) renderWhitelist(wlRes.whitelist);
+  const whitelist = wlRes?.whitelist || (await getStoredConfig()).whitelist || [];
+  renderWhitelist(whitelist);
 
   if (recRes?.records) {
     allRecords = recRes.records;
@@ -262,13 +281,13 @@ function showToast(msg, color) {
 
 // Export
 document.getElementById('exportBtn').addEventListener('click', async () => {
-  const res = await sendToContent({ type: 'GET_KEYWORDS' });
-  if (!res?.keywords) { showToast('请先打开 X.com', '#e0415a'); return; }
+  const keywords = await getKeywordsAny();
+  if (!keywords.length) { showToast('❌ 没有关键词可导出', '#e0415a'); return; }
 
   const data = {
     version: '1.0',
     exportTime: new Date().toISOString(),
-    keywords: res.keywords
+    keywords
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -278,7 +297,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   a.download = `x-blocker-keywords-${date}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast(`✅ 已导出 ${res.keywords.length} 个关键词`, '#22c55e');
+  showToast(`✅ 已导出 ${keywords.length} 个关键词`, '#22c55e');
 });
 
 // Import
@@ -311,23 +330,21 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
 
   if (keywords.length === 0) { showToast('❌ 未找到关键词', '#e0415a'); return; }
 
-  // 获取现有关键词，合并去重
-  const existing = await sendToContent({ type: 'GET_KEYWORDS' });
-  const existingSet = new Set(existing?.keywords || []);
+  // 直接读写 storage，不依赖当前 tab 是否是 x.com
+  const existingKw = await getKeywordsAny();
+  const existingSet = new Set(existingKw);
   const newOnes = keywords.filter(k => !existingSet.has(k));
 
   if (newOnes.length === 0) { showToast('全部关键词已存在，无需导入', '#f59e0b'); return; }
 
-  // 逐个添加
-  let lastRes = null;
-  for (const kw of newOnes) {
-    lastRes = await sendToContent({ type: 'ADD_KEYWORD', keyword: kw });
-  }
+  const merged = [...existingKw, ...newOnes];
+  await setStoredConfig({ keywords: merged });
 
-  if (lastRes?.keywords) {
-    renderKeywords(lastRes.keywords);
-    document.getElementById('keywordCount').textContent = lastRes.keywords.length;
-  }
+  // 顺便通知 content script（如果当前 tab 是 x.com 则即时生效；不是也没事）
+  await sendToContent({ type: 'RELOAD_CONFIG' });
+
+  renderKeywords(merged);
+  document.getElementById('keywordCount').textContent = merged.length;
   showToast(`✅ 导入 ${newOnes.length} 个新关键词`, '#22c55e');
 });
 
