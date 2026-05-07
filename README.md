@@ -1,5 +1,8 @@
 # X Auto Blocker 🛡️
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/github/v/release/onedooge/x-auto-blocker)](https://github.com/onedooge/x-auto-blocker/releases)
+
 自动检测并屏蔽 X（Twitter）上发布不当内容的账号。
 
 ---
@@ -82,5 +85,14 @@ x-auto-blocker/
 ├── popup.html      # 弹窗界面
 ├── popup.js        # 弹窗逻辑
 ├── icons/          # 图标
+├── LICENSE         # MIT 开源协议
 └── README.md
 ```
+
+---
+
+## 许可证
+
+[MIT License](LICENSE) © 2026 [onedooge](https://github.com/onedooge)
+
+随便用、随便改、随便商用，保留版权声明就行。
