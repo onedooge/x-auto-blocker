@@ -46,6 +46,9 @@ async function applyWhitelist(whitelist) {
 }
 
 async function init() {
+  // 显示版本号（从 manifest 动态读取，bump 版本时不用改 popup.html）
+  document.getElementById('aboutVersion').textContent = 'v' + chrome.runtime.getManifest().version;
+
   const status = await sendToContent({ type: 'GET_STATUS' });
   const kwRes  = await sendToContent({ type: 'GET_KEYWORDS' });
   const recRes = await sendToContent({ type: 'GET_RECORDS' });
