@@ -29,10 +29,10 @@
     if (stored.records) records = stored.records;
     if (stored.triggerLog) triggerLog = stored.triggerLog;
 
-    if (!config.enabled) return;
+    // observer 始终启动，是否处理由 config.enabled 控制
     observeTweets();
-    scanExistingTweets();
-    console.log('[X Auto Blocker] 已启动，关键词数量:', config.keywords.length);
+    if (config.enabled) scanExistingTweets();
+    console.log('[X Auto Blocker] 已启动，状态:', config.enabled ? '运行中' : '已暂停', '关键词数量:', config.keywords.length);
   }
 
   // ==================== 关键词检测 ====================
@@ -48,16 +48,26 @@
     return (textEl ? textEl.innerText : '') + ' ' + (userEl ? userEl.innerText : '');
   }
 
+  // X 系统路径，避免被误识别为账号
+  const SYSTEM_PATHS = new Set([
+    'home', 'explore', 'notifications', 'messages', 'bookmarks',
+    'communities', 'lists', 'profile', 'settings', 'compose',
+    'search', 'i', 'login', 'signup', 'tos', 'privacy', 'help',
+    'about', 'jobs', 'verified-choose', 'topics'
+  ]);
+
   function getAccountHandle(tweetEl) {
     const links = tweetEl.querySelectorAll('a[href*="/status/"]');
     for (const link of links) {
-      const match = link.href.match(/x\.com\/([^/]+)\/status/);
-      if (match) return match[1];
+      const match = link.href.match(/(?:x|twitter)\.com\/([^/]+)\/status/);
+      if (match && !SYSTEM_PATHS.has(match[1].toLowerCase())) return match[1];
     }
     const userLink = tweetEl.querySelector('a[role="link"][href^="/"]');
     if (userLink) {
       const match = userLink.href.match(/\/([^/]+)$/);
-      if (match && !match[1].includes('.')) return match[1];
+      if (match && !match[1].includes('.') && !SYSTEM_PATHS.has(match[1].toLowerCase())) {
+        return match[1];
+      }
     }
     return null;
   }
@@ -80,12 +90,6 @@
     triggerLog[handle].push(now);
     chrome.storage.local.set({ triggerLog });
     return triggerLog[handle].length;
-  }
-
-  function getTriggerCount(handle) {
-    if (!triggerLog[handle]) return 0;
-    const now = Date.now();
-    return triggerLog[handle].filter(t => now - t < BLOCK_WINDOW_MS).length;
   }
 
   // ==================== 屏蔽操作 ====================
@@ -141,6 +145,7 @@
 
   // ==================== 推文扫描 ====================
   async function processTweet(tweetEl) {
+    if (!config.enabled) return;
     if (tweetEl.hasAttribute('data-xblocker-checked')) return;
     tweetEl.setAttribute('data-xblocker-checked', 'true');
 
@@ -300,6 +305,7 @@
     if (msg.type === 'RESET_COUNT') {
       config.blockedCount = 0;
       triggerLog = {};
+      records = [];
       saveConfig();
       sendResponse({ ok: true });
     }
