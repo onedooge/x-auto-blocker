@@ -1,7 +1,38 @@
-// X Auto Blocker - Popup Script
+// Auto Blocker - Popup Script (X + YouTube)
 
+let currentPlatform = 'x';
 let allRecords = [];
+let currentThreshold = 10;
 
+// ==================== 平台相关常量 ====================
+const PLATFORM_META = {
+  x: {
+    configKey: 'config',
+    recordsKey: 'records',
+    reloadMsg: 'RELOAD_CONFIG',
+    hasThreshold: true,
+    hasBlockTab: true,
+    keywordPlaceholder: '添加关键词...',
+    whitelistPlaceholder: '输入账号名，如 grok',
+    whitelistEmpty: '暂无白名单账号',
+    statusOnlineHint: '请打开 X.com'
+  },
+  youtube: {
+    configKey: 'youtube_config',
+    recordsKey: 'youtube_records',
+    reloadMsg: 'YT_RELOAD_CONFIG',
+    hasThreshold: false,
+    hasBlockTab: false,
+    keywordPlaceholder: '添加关键词（匹配标题/频道）...',
+    whitelistPlaceholder: '输入频道名，如 LinusTechTips',
+    whitelistEmpty: '暂无白名单频道',
+    statusOnlineHint: '请打开 YouTube'
+  }
+};
+
+function meta() { return PLATFORM_META[currentPlatform]; }
+
+// ==================== 消息发送 ====================
 async function sendToContent(msg) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -10,90 +41,54 @@ async function sendToContent(msg) {
   } catch (e) { return null; }
 }
 
-// 直接读写 storage，绕开"必须激活 x.com tab"的限制
-async function getStoredConfig() {
-  const stored = await chrome.storage.local.get('config');
-  return stored.config || {};
+// ==================== 平台感知 storage 读写 ====================
+async function getPlatformConfig() {
+  const key = meta().configKey;
+  const stored = await chrome.storage.local.get(key);
+  return stored[key] || {};
 }
-async function setStoredConfig(patch) {
-  const cfg = await getStoredConfig();
+async function setPlatformConfig(patch) {
+  const key = meta().configKey;
+  const cfg = await getPlatformConfig();
   const merged = { ...cfg, ...patch };
-  await chrome.storage.local.set({ config: merged });
+  await chrome.storage.local.set({ [key]: merged });
   return merged;
 }
-async function getKeywordsAny() {
-  const res = await sendToContent({ type: 'GET_KEYWORDS' });
-  if (res?.keywords) return res.keywords;
-  const cfg = await getStoredConfig();
-  return cfg.keywords || [];
+async function getPlatformRecords() {
+  const key = meta().recordsKey;
+  const stored = await chrome.storage.local.get(key);
+  return stored[key] || [];
 }
-async function getWhitelistAny() {
-  const res = await sendToContent({ type: 'GET_WHITELIST' });
-  if (res?.whitelist) return res.whitelist;
-  const cfg = await getStoredConfig();
-  return cfg.whitelist || [];
+async function setPlatformRecords(records) {
+  const key = meta().recordsKey;
+  await chrome.storage.local.set({ [key]: records });
 }
-async function applyKeywords(keywords) {
-  await setStoredConfig({ keywords });
-  await sendToContent({ type: 'RELOAD_CONFIG' });
-  renderKeywords(keywords);
-  document.getElementById('keywordCount').textContent = keywords.length;
-}
-async function applyWhitelist(whitelist) {
-  await setStoredConfig({ whitelist });
-  await sendToContent({ type: 'RELOAD_CONFIG' });
-  renderWhitelist(whitelist);
+async function notifyReload() {
+  await sendToContent({ type: meta().reloadMsg });
 }
 
-async function init() {
-  // 显示版本号（从 manifest 动态读取，bump 版本时不用改 popup.html）
-  document.getElementById('aboutVersion').textContent = 'v' + chrome.runtime.getManifest().version;
-
-  const status = await sendToContent({ type: 'GET_STATUS' });
-  const kwRes  = await sendToContent({ type: 'GET_KEYWORDS' });
-  const recRes = await sendToContent({ type: 'GET_RECORDS' });
-
-  const isXPage = status !== null;
-  const dot = document.getElementById('statusDot');
-  const statusText = document.getElementById('statusText');
-
-  if (isXPage) {
-    dot.classList.add('active');
-    statusText.textContent = '运行中';
-    document.getElementById('enableToggle').checked = status.enabled;
-    setEnableLabel(status.enabled);
-    const threshold = status.blockThreshold || 10;
-    document.getElementById('thresholdVal').textContent = threshold;
-    updateThresholdTip(threshold);
-  } else {
-    statusText.textContent = '请打开 X.com';
-  }
-
-  // 关键词：优先从 content 拿，没有则从 storage 兜底
-  const keywords = kwRes?.keywords || (await getStoredConfig()).keywords || [];
-  renderKeywords(keywords);
-  document.getElementById('keywordCount').textContent = keywords.length;
-
-  const wlRes = await sendToContent({ type: 'GET_WHITELIST' });
-  const whitelist = wlRes?.whitelist || (await getStoredConfig()).whitelist || [];
-  renderWhitelist(whitelist);
-
-  if (recRes?.records) {
-    allRecords = recRes.records;
-    updateStats();
-    renderAllRecordLists();
-  }
+// ==================== 渲染 ====================
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function setEnableLabel(enabled) {
   document.getElementById('enableLabel').textContent = enabled ? '开启' : '关闭';
 }
 
-function updateStats() {
-  const blocked = allRecords.filter(r => r.action === 'blocked').length;
-  const hidden  = allRecords.filter(r => r.action === 'hidden').length;
-  document.getElementById('blockedCount').textContent = blocked;
-  document.getElementById('hiddenCount').textContent  = hidden;
+function updateStats(records) {
+  if (currentPlatform === 'x') {
+    const blocked = records.filter(r => r.action === 'blocked').length;
+    const hidden  = records.filter(r => r.action === 'hidden').length;
+    document.getElementById('blockedCount').textContent = blocked;
+    document.getElementById('hiddenCount').textContent  = hidden;
+  } else {
+    // YouTube 只有隐藏
+    document.getElementById('blockedCount').textContent = '–';
+    document.getElementById('hiddenCount').textContent  = records.length;
+  }
 }
 
 function formatTime(iso) {
@@ -105,9 +100,62 @@ function formatTime(iso) {
   return d.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
-function renderRecordList(listEl, countEl, records, action) {
-  const filtered = records.filter(r => r.action === action);
-  const label = action === 'blocked' ? '屏蔽' : '隐藏';
+function renderXRecord(r) {
+  const threshold = currentThreshold;
+  const count = r.triggerCount || 0;
+  const pct = r.action === 'hidden' && count ? Math.min(100, Math.round(count / threshold * 100)) : 0;
+  const progressHtml = r.action === 'hidden' && count ? `
+    <div class="trigger-progress">
+      <div class="trigger-bar" style="width:${pct}%"></div>
+    </div>
+    <div class="trigger-label">${count}/${threshold} 次触发</div>` : '';
+
+  return `
+  <div class="record-item ${r.tweetUrl ? 'clickable' : ''}" data-url="${escapeHtml(r.tweetUrl || '')}">
+    <div class="record-body">
+      <div class="record-handle">@${escapeHtml(r.handle)} ${r.tweetUrl ? '<span class="link-hint">↗</span>' : ''}</div>
+      ${r.tweetText ? `<div class="record-text" title="${escapeHtml(r.tweetText)}">${escapeHtml(r.tweetText)}</div>` : ''}
+      ${r.matchedKeywords && r.matchedKeywords.length ? `
+        <div class="record-keywords">
+          ${r.matchedKeywords.map(kw => `<span class="kw-hit">🔑 ${escapeHtml(kw)}</span>`).join('')}
+        </div>` : ''}
+      ${progressHtml}
+      <div class="record-time">${formatTime(r.time)}</div>
+    </div>
+  </div>`;
+}
+
+function renderYtRecord(r) {
+  return `
+  <div class="record-item">
+    <div class="record-body">
+      <div class="record-handle">${escapeHtml(r.title || '未知视频')}</div>
+      <div class="record-text">${escapeHtml(r.channel || '未知频道')}</div>
+      ${r.matchedKeywords && r.matchedKeywords.length ? `
+        <div class="record-keywords">
+          ${r.matchedKeywords.map(kw => `<span class="kw-hit">🔑 ${escapeHtml(kw)}</span>`).join('')}
+        </div>` : ''}
+      <div class="record-time">${formatTime(r.time)}</div>
+    </div>
+  </div>`;
+}
+
+function renderRecordList(listEl, countEl, records, type) {
+  let filtered;
+  let label;
+  if (currentPlatform === 'x') {
+    filtered = records.filter(r => r.action === type);
+    label = type === 'blocked' ? '屏蔽' : '隐藏';
+  } else {
+    // YouTube 只有 hidden
+    if (type === 'blocked') {
+      filtered = [];
+      label = '屏蔽';
+    } else {
+      filtered = records;
+      label = '隐藏';
+    }
+  }
   countEl.textContent = filtered.length + ' 条记录';
 
   if (filtered.length === 0) {
@@ -115,30 +163,8 @@ function renderRecordList(listEl, countEl, records, action) {
     return;
   }
 
-  listEl.innerHTML = filtered.map(r => {
-    const threshold = 10;
-    const count = r.triggerCount || 0;
-    const pct = action === 'hidden' && count ? Math.min(100, Math.round(count / threshold * 100)) : 0;
-    const progressHtml = action === 'hidden' && count ? `
-      <div class="trigger-progress">
-        <div class="trigger-bar" style="width:${pct}%"></div>
-      </div>
-      <div class="trigger-label">${count}/${threshold} 次触发</div>` : '';
-
-    return `
-    <div class="record-item ${r.tweetUrl ? 'clickable' : ''}" data-url="${escapeHtml(r.tweetUrl || '')}">
-      <div class="record-body">
-        <div class="record-handle">@${escapeHtml(r.handle)} ${r.tweetUrl ? '<span class="link-hint">↗</span>' : ''}</div>
-        ${r.tweetText ? `<div class="record-text" title="${escapeHtml(r.tweetText)}">${escapeHtml(r.tweetText)}</div>` : ''}
-        ${r.matchedKeywords && r.matchedKeywords.length ? `
-          <div class="record-keywords">
-            ${r.matchedKeywords.map(kw => `<span class="kw-hit">🔑 ${escapeHtml(kw)}</span>`).join('')}
-          </div>` : ''}
-        ${progressHtml}
-        <div class="record-time">${formatTime(r.time)}</div>
-      </div>
-    </div>`;
-  }).join('');
+  const renderFn = currentPlatform === 'x' ? renderXRecord : renderYtRecord;
+  listEl.innerHTML = filtered.map(renderFn).join('');
 
   listEl.querySelectorAll('.record-item.clickable').forEach(item => {
     item.addEventListener('click', () => {
@@ -161,42 +187,6 @@ function renderAllRecordLists() {
   );
 }
 
-function renderWhitelist(whitelist) {
-  const list = document.getElementById('wlList');
-  list.innerHTML = '';
-  if (whitelist.length === 0) {
-    list.innerHTML = '<div style="font-size:11px;color:#4b5563;padding:4px 0;">暂无白名单账号</div>';
-    return;
-  }
-  whitelist.forEach(handle => {
-    const tag = document.createElement('div');
-    tag.className = 'kw-tag';
-    tag.style.borderColor = '#22c55e44';
-    tag.innerHTML = `<span style="color:#22c55e">@${escapeHtml(handle)}</span><button class="kw-remove" data-handle="${escapeHtml(handle)}">×</button>`;
-    list.appendChild(tag);
-  });
-  list.querySelectorAll('.kw-remove').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const target = btn.getAttribute('data-handle');
-      const existing = await getWhitelistAny();
-      await applyWhitelist(existing.filter(w => w.toLowerCase() !== target.toLowerCase()));
-    });
-  });
-}
-
-async function addWhitelist() {
-  const input = document.getElementById('wlInput');
-  const handle = input.value.replace(/^@/, '').trim();
-  if (!handle) return;
-  const existing = await getWhitelistAny();
-  if (existing.some(w => w.toLowerCase() === handle.toLowerCase())) { input.value = ''; return; }
-  await applyWhitelist([handle, ...existing]);
-  input.value = '';
-  showToast(`✅ 已添加 @${handle} 到白名单`, '#22c55e');
-}
-document.getElementById('wlAdd').addEventListener('click', addWhitelist);
-document.getElementById('wlInput').addEventListener('keydown', e => { if (e.key === 'Enter') addWhitelist(); });
-
 function renderKeywords(keywords) {
   const list = document.getElementById('kwList');
   list.innerHTML = '';
@@ -209,17 +199,153 @@ function renderKeywords(keywords) {
   list.querySelectorAll('.kw-remove').forEach(btn => {
     btn.addEventListener('click', async () => {
       const target = btn.getAttribute('data-kw');
-      const existing = await getKeywordsAny();
-      await applyKeywords(existing.filter(k => k !== target));
+      const cfg = await getPlatformConfig();
+      const existing = cfg.keywords || [];
+      const next = existing.filter(k => k !== target);
+      await setPlatformConfig({ keywords: next });
+      await notifyReload();
+      renderKeywords(next);
+      document.getElementById('keywordCount').textContent = next.length;
     });
   });
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function renderWhitelist(whitelist) {
+  const list = document.getElementById('wlList');
+  list.innerHTML = '';
+  if (whitelist.length === 0) {
+    list.innerHTML = `<div style="font-size:11px;color:#b8a880;padding:4px 0;">${meta().whitelistEmpty}</div>`;
+    return;
+  }
+  whitelist.forEach(handle => {
+    const tag = document.createElement('div');
+    tag.className = 'kw-tag';
+    tag.style.borderColor = '#22c55e44';
+    const prefix = currentPlatform === 'x' ? '@' : '';
+    tag.innerHTML = `<span style="color:#22c55e">${prefix}${escapeHtml(handle)}</span><button class="kw-remove" data-handle="${escapeHtml(handle)}">×</button>`;
+    list.appendChild(tag);
+  });
+  list.querySelectorAll('.kw-remove').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const target = btn.getAttribute('data-handle');
+      const cfg = await getPlatformConfig();
+      const existing = cfg.whitelist || [];
+      const next = existing.filter(w => w.toLowerCase() !== target.toLowerCase());
+      await setPlatformConfig({ whitelist: next });
+      await notifyReload();
+      renderWhitelist(next);
+    });
+  });
 }
+
+// ==================== 平台切换 ====================
+async function switchPlatform(platform) {
+  if (platform === currentPlatform) return;
+  currentPlatform = platform;
+  await chrome.storage.local.set({ ui_platform: platform });
+
+  // 高亮切换按钮
+  document.querySelectorAll('.platform-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.platform === platform);
+  });
+
+  applyPlatformUI();
+  await loadPlatformData();
+}
+
+function applyPlatformUI() {
+  const m = meta();
+  // 屏蔽 tab
+  document.getElementById('tabBlocked').style.display = m.hasBlockTab ? '' : 'none';
+  // 已屏蔽统计列：YouTube 显示 "–"
+  // 设置 tab 区块
+  document.getElementById('sectionThreshold').style.display = m.hasThreshold ? '' : 'none';
+  document.getElementById('sectionYoutubeInfo').style.display = m.hasThreshold ? 'none' : '';
+  // 输入框 placeholder
+  document.getElementById('kwInput').placeholder = m.keywordPlaceholder;
+  document.getElementById('wlInput').placeholder = m.whitelistPlaceholder;
+
+  // 若当前选中的是屏蔽 tab 但平台不支持，跳回 设置
+  if (!m.hasBlockTab) {
+    const activeTab = document.querySelector('.tab.active');
+    if (activeTab && activeTab.dataset.tab === 'blocked-records') {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelector('.tab[data-tab="settings"]').classList.add('active');
+      document.getElementById('tab-settings').classList.add('active');
+    }
+  }
+}
+
+async function loadPlatformData() {
+  const cfg = await getPlatformConfig();
+  const records = await getPlatformRecords();
+
+  // 开关
+  const enabled = cfg.enabled !== false;
+  document.getElementById('enableToggle').checked = enabled;
+  setEnableLabel(enabled);
+
+  // 状态点（看当前 tab 是不是该平台）
+  const dot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const status = await sendToContent({ type: currentPlatform === 'x' ? 'GET_STATUS' : 'YT_GET_STATUS' });
+  if (status) {
+    dot.classList.add('active');
+    statusText.textContent = '运行中';
+  } else {
+    dot.classList.remove('active');
+    statusText.textContent = meta().statusOnlineHint;
+  }
+
+  // 阈值（X 才有）
+  if (meta().hasThreshold) {
+    currentThreshold = cfg.blockThreshold || 10;
+    document.getElementById('thresholdVal').textContent = currentThreshold;
+    updateThresholdTip(currentThreshold);
+  }
+
+  // 关键词/白名单/记录
+  const keywords = cfg.keywords || [];
+  const whitelist = cfg.whitelist || [];
+  renderKeywords(keywords);
+  renderWhitelist(whitelist);
+  document.getElementById('keywordCount').textContent = keywords.length;
+
+  allRecords = records;
+  updateStats(records);
+  renderAllRecordLists();
+}
+
+// ==================== 初始化 ====================
+async function init() {
+  document.getElementById('aboutVersion').textContent = 'v' + chrome.runtime.getManifest().version;
+
+  // 读取上次平台选择
+  const stored = await chrome.storage.local.get('ui_platform');
+  currentPlatform = stored.ui_platform || 'x';
+  document.querySelectorAll('.platform-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.platform === currentPlatform);
+  });
+
+  applyPlatformUI();
+  await loadPlatformData();
+}
+
+// ==================== 事件绑定 ====================
+
+// 平台切换按钮
+document.querySelectorAll('.platform-pill').forEach(p => {
+  p.addEventListener('click', () => switchPlatform(p.dataset.platform));
+});
+
+// 总开关
+document.getElementById('enableToggle').addEventListener('change', async (e) => {
+  const enabled = e.target.checked;
+  setEnableLabel(enabled);
+  await setPlatformConfig({ enabled });
+  await notifyReload();
+});
 
 // Tabs
 document.querySelectorAll('.tab').forEach(tab => {
@@ -231,77 +357,110 @@ document.querySelectorAll('.tab').forEach(tab => {
   });
 });
 
-// Clear blocked records
+// 清空屏蔽记录（仅 X）
 document.getElementById('clearBlockedBtn').addEventListener('click', async () => {
+  if (currentPlatform !== 'x') return;
   if (!confirm('确认清空所有屏蔽记录？')) return;
   allRecords = allRecords.filter(r => r.action !== 'blocked');
-  await sendToContent({ type: 'SET_RECORDS', records: allRecords });
-  updateStats();
+  await setPlatformRecords(allRecords);
+  updateStats(allRecords);
   renderAllRecordLists();
 });
 
-// Clear hidden records
+// 清空隐藏记录
 document.getElementById('clearHiddenBtn').addEventListener('click', async () => {
   if (!confirm('确认清空所有隐藏记录？')) return;
-  allRecords = allRecords.filter(r => r.action !== 'hidden');
-  await sendToContent({ type: 'SET_RECORDS', records: allRecords });
-  updateStats();
+  if (currentPlatform === 'x') {
+    allRecords = allRecords.filter(r => r.action !== 'hidden');
+  } else {
+    allRecords = [];
+  }
+  await setPlatformRecords(allRecords);
+  updateStats(allRecords);
   renderAllRecordLists();
 });
 
-// Threshold controls
+// Threshold（仅 X）
 function updateThresholdTip(val) {
   document.getElementById('thresholdTip').textContent =
     `默认隐藏推文，24小时内触发 ${val} 次后自动屏蔽账号`;
 }
-
-let currentThreshold = 10;
 document.getElementById('thresholdDown').addEventListener('click', async () => {
+  if (!meta().hasThreshold) return;
   if (currentThreshold <= 1) return;
   currentThreshold--;
   document.getElementById('thresholdVal').textContent = currentThreshold;
   updateThresholdTip(currentThreshold);
-  await sendToContent({ type: 'UPDATE_CONFIG', config: { blockThreshold: currentThreshold } });
+  await setPlatformConfig({ blockThreshold: currentThreshold });
+  await notifyReload();
 });
 document.getElementById('thresholdUp').addEventListener('click', async () => {
+  if (!meta().hasThreshold) return;
   if (currentThreshold >= 99) return;
   currentThreshold++;
   document.getElementById('thresholdVal').textContent = currentThreshold;
   updateThresholdTip(currentThreshold);
-  await sendToContent({ type: 'UPDATE_CONFIG', config: { blockThreshold: currentThreshold } });
+  await setPlatformConfig({ blockThreshold: currentThreshold });
+  await notifyReload();
 });
 
-// Keywords
+// 添加关键词
 async function addKeyword() {
   const input = document.getElementById('kwInput');
   const kw = input.value.trim();
   if (!kw) return;
-  const existing = await getKeywordsAny();
+  const cfg = await getPlatformConfig();
+  const existing = cfg.keywords || [];
   if (existing.includes(kw)) { input.value = ''; return; }
-  await applyKeywords([kw, ...existing]); // 新加的放最前
+  const next = [kw, ...existing];
+  await setPlatformConfig({ keywords: next });
+  await notifyReload();
+  renderKeywords(next);
+  document.getElementById('keywordCount').textContent = next.length;
   input.value = '';
 }
 document.getElementById('kwAdd').addEventListener('click', addKeyword);
 document.getElementById('kwInput').addEventListener('keydown', e => { if (e.key === 'Enter') addKeyword(); });
 
+// 添加白名单
+async function addWhitelist() {
+  const input = document.getElementById('wlInput');
+  const handle = input.value.replace(/^@/, '').trim();
+  if (!handle) return;
+  const cfg = await getPlatformConfig();
+  const existing = cfg.whitelist || [];
+  if (existing.some(w => w.toLowerCase() === handle.toLowerCase())) { input.value = ''; return; }
+  const next = [handle, ...existing];
+  await setPlatformConfig({ whitelist: next });
+  await notifyReload();
+  renderWhitelist(next);
+  input.value = '';
+  const prefix = currentPlatform === 'x' ? '@' : '';
+  showToast(`✅ 已添加 ${prefix}${handle} 到白名单`, '#22c55e');
+}
+document.getElementById('wlAdd').addEventListener('click', addWhitelist);
+document.getElementById('wlInput').addEventListener('keydown', e => { if (e.key === 'Enter') addWhitelist(); });
+
 // Toast
 function showToast(msg, color) {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.style.borderColor = color || '#2a2f3e';
-  t.style.color = color ? '#fff' : '#d1d5db';
-  t.style.background = color ? color + '22' : '#1a1f2e';
+  t.style.borderColor = color || '#c9b888';
+  t.style.color = color ? '#fff' : '#4a3d2a';
+  t.style.background = color ? color + '22' : '#fff8e6';
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-// Export
+// ==================== 关键词导出/导入（仅当前平台）====================
 document.getElementById('exportBtn').addEventListener('click', async () => {
-  const keywords = await getKeywordsAny();
+  const cfg = await getPlatformConfig();
+  const keywords = cfg.keywords || [];
   if (!keywords.length) { showToast('❌ 没有关键词可导出', '#e0415a'); return; }
 
   const data = {
     version: '1.0',
+    platform: currentPlatform,
     exportTime: new Date().toISOString(),
     keywords
   };
@@ -310,13 +469,12 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   const a = document.createElement('a');
   const date = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `x-blocker-keywords-${date}.json`;
+  a.download = `auto-blocker-${currentPlatform}-keywords-${date}.json`;
   a.click();
   URL.revokeObjectURL(url);
   showToast(`✅ 已导出 ${keywords.length} 个关键词`, '#22c55e');
 });
 
-// Import
 document.getElementById('importBtn').addEventListener('click', () => {
   document.getElementById('importFile').click();
 });
@@ -324,13 +482,12 @@ document.getElementById('importBtn').addEventListener('click', () => {
 document.getElementById('importFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  e.target.value = ''; // 重置，允许重复导入同一文件
+  e.target.value = '';
 
   const text = await file.text();
   let keywords = [];
 
   try {
-    // 支持 JSON 格式
     const json = JSON.parse(text);
     if (Array.isArray(json)) {
       keywords = json.filter(k => typeof k === 'string' && k.trim());
@@ -340,53 +497,58 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
       showToast('❌ 格式不支持', '#e0415a'); return;
     }
   } catch {
-    // 支持纯文本（每行一个关键词）
     keywords = text.split('\n').map(l => l.trim()).filter(Boolean);
   }
 
   if (keywords.length === 0) { showToast('❌ 未找到关键词', '#e0415a'); return; }
 
-  // 直接读写 storage，不依赖当前 tab 是否是 x.com
-  const existingKw = await getKeywordsAny();
-  const existingSet = new Set(existingKw);
+  const cfg = await getPlatformConfig();
+  const existing = cfg.keywords || [];
+  const existingSet = new Set(existing);
   const newOnes = keywords.filter(k => !existingSet.has(k));
 
   if (newOnes.length === 0) { showToast('全部关键词已存在，无需导入', '#f59e0b'); return; }
 
-  const merged = [...newOnes, ...existingKw]; // 新导入的放最前面
-  await setStoredConfig({ keywords: merged });
-
-  // 顺便通知 content script（如果当前 tab 是 x.com 则即时生效；不是也没事）
-  await sendToContent({ type: 'RELOAD_CONFIG' });
-
+  const merged = [...newOnes, ...existing];
+  await setPlatformConfig({ keywords: merged });
+  await notifyReload();
   renderKeywords(merged);
   document.getElementById('keywordCount').textContent = merged.length;
   showToast(`✅ 导入 ${newOnes.length} 个新关键词`, '#22c55e');
 });
 
-// ==================== 全部备份 / 恢复 ====================
+// ==================== 全部备份/恢复（跨平台）====================
 document.getElementById('exportAllBtn').addEventListener('click', async () => {
-  const stored = await chrome.storage.local.get(['config', 'blockedAccounts', 'records', 'triggerLog']);
+  const stored = await chrome.storage.local.get([
+    'config', 'blockedAccounts', 'records', 'triggerLog',
+    'youtube_config', 'youtube_records'
+  ]);
   const data = {
     type: 'full',
-    version: '1.0',
+    version: '2.0',
     exportTime: new Date().toISOString(),
-    config: stored.config || {},
-    blockedAccounts: stored.blockedAccounts || [],
-    records: stored.records || [],
-    triggerLog: stored.triggerLog || {}
+    x: {
+      config: stored.config || {},
+      blockedAccounts: stored.blockedAccounts || [],
+      records: stored.records || [],
+      triggerLog: stored.triggerLog || {}
+    },
+    youtube: {
+      config: stored.youtube_config || {},
+      records: stored.youtube_records || []
+    }
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const date = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `x-blocker-full-${date}.json`;
+  a.download = `auto-blocker-full-${date}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  const kwCount = data.config.keywords?.length || 0;
-  const recCount = data.records.length;
-  showToast(`✅ 全部备份已导出（${kwCount}词 / ${recCount}条记录）`, '#22c55e');
+  const xKw = data.x.config.keywords?.length || 0;
+  const ytKw = data.youtube.config.keywords?.length || 0;
+  showToast(`✅ 全部备份已导出（X:${xKw}词 / YT:${ytKw}词）`, '#22c55e');
 });
 
 document.getElementById('importAllBtn').addEventListener('click', () => {
@@ -403,102 +565,141 @@ document.getElementById('importAllFile').addEventListener('change', async (e) =>
   catch { showToast('❌ JSON 格式错误', '#e0415a'); return; }
 
   if (json.type !== 'full') {
-    showToast('❌ 不是全部备份文件，请用「关键词」标签的导入', '#e0415a');
+    showToast('❌ 不是全部备份文件', '#e0415a');
     return;
   }
 
-  const stored = await chrome.storage.local.get(['config', 'blockedAccounts', 'records', 'triggerLog']);
-  const curConfig = stored.config || {};
-  const curBlocked = stored.blockedAccounts || [];
-  const curRecords = stored.records || [];
-  const curTrigger = stored.triggerLog || {};
+  // 兼容 v1.0（只有 X 平面）和 v2.0（分平台）
+  const isV2 = json.version === '2.0' || json.x || json.youtube;
+  const impX = isV2 ? (json.x || {}) : {
+    config: json.config || {},
+    blockedAccounts: json.blockedAccounts || [],
+    records: json.records || [],
+    triggerLog: json.triggerLog || {}
+  };
+  const impYt = isV2 ? (json.youtube || {}) : { config: {}, records: [] };
 
-  const impConfig = json.config || {};
-  const impBlocked = json.blockedAccounts || [];
-  const impRecords = json.records || [];
-  const impTrigger = json.triggerLog || {};
+  // === X 合并 ===
+  const stored = await chrome.storage.local.get(['config', 'blockedAccounts', 'records', 'triggerLog', 'youtube_config', 'youtube_records']);
+  const curXCfg = stored.config || {};
+  const curXBlocked = stored.blockedAccounts || [];
+  const curXRecords = stored.records || [];
+  const curXTrigger = stored.triggerLog || {};
+  const impXCfg = impX.config || {};
 
-  // 关键词去重并集（导入的放最前）
-  const curKw = curConfig.keywords || [];
-  const kwSet = new Set(curKw);
-  const newKw = (impConfig.keywords || []).filter(k => !kwSet.has(k));
-  const mergedKw = [...newKw, ...curKw];
+  const xKwSet = new Set(curXCfg.keywords || []);
+  const xNewKw = (impXCfg.keywords || []).filter(k => !xKwSet.has(k));
+  const xMergedKw = [...xNewKw, ...(curXCfg.keywords || [])];
 
-  // 白名单（不区分大小写并集）
-  const curWl = curConfig.whitelist || [];
-  const wlLower = new Set(curWl.map(w => w.toLowerCase()));
-  const newWl = (impConfig.whitelist || []).filter(w => !wlLower.has(w.toLowerCase()));
-  const mergedWl = [...newWl, ...curWl];
+  const xWlLower = new Set((curXCfg.whitelist || []).map(w => w.toLowerCase()));
+  const xNewWl = (impXCfg.whitelist || []).filter(w => !xWlLower.has(w.toLowerCase()));
+  const xMergedWl = [...xNewWl, ...(curXCfg.whitelist || [])];
 
-  // 已屏蔽账号集合并集
-  const mergedBlockedSet = new Set([...curBlocked, ...impBlocked]);
-  const mergedBlocked = [...mergedBlockedSet];
+  const xMergedBlocked = [...new Set([...curXBlocked, ...(impX.blockedAccounts || [])])];
 
-  // 记录按 id 去重，时间倒序，限 500
-  const recIds = new Set(curRecords.map(r => r.id));
-  const newRecs = impRecords.filter(r => !recIds.has(r.id));
-  const mergedRecords = [...curRecords, ...newRecs]
+  const xRecIds = new Set(curXRecords.map(r => r.id));
+  const xNewRecs = (impX.records || []).filter(r => !xRecIds.has(r.id));
+  const xMergedRecords = [...curXRecords, ...xNewRecs]
     .sort((a, b) => new Date(b.time) - new Date(a.time))
     .slice(0, 500);
 
-  // 触发日志合并 + 24h 过滤
   const now = Date.now();
   const WINDOW = 24 * 60 * 60 * 1000;
-  const mergedTrigger = { ...curTrigger };
-  for (const [h, times] of Object.entries(impTrigger)) {
-    const set = new Set([...(mergedTrigger[h] || []), ...times]);
-    mergedTrigger[h] = [...set].filter(t => now - t < WINDOW);
+  const xMergedTrigger = { ...curXTrigger };
+  for (const [h, times] of Object.entries(impX.triggerLog || {})) {
+    const set = new Set([...(xMergedTrigger[h] || []), ...times]);
+    xMergedTrigger[h] = [...set].filter(t => now - t < WINDOW);
   }
-  for (const h of Object.keys(mergedTrigger)) {
-    mergedTrigger[h] = (mergedTrigger[h] || []).filter(t => now - t < WINDOW);
-    if (mergedTrigger[h].length === 0) delete mergedTrigger[h];
+  for (const h of Object.keys(xMergedTrigger)) {
+    xMergedTrigger[h] = (xMergedTrigger[h] || []).filter(t => now - t < WINDOW);
+    if (xMergedTrigger[h].length === 0) delete xMergedTrigger[h];
   }
 
-  const newConfig = {
-    ...curConfig,
-    ...impConfig,
-    keywords: mergedKw,
-    whitelist: mergedWl,
-    blockThreshold: impConfig.blockThreshold || curConfig.blockThreshold || 10,
-    blockedCount: mergedBlocked.length
+  const newXConfig = {
+    ...curXCfg,
+    ...impXCfg,
+    keywords: xMergedKw,
+    whitelist: xMergedWl,
+    blockThreshold: impXCfg.blockThreshold || curXCfg.blockThreshold || 10,
+    blockedCount: xMergedBlocked.length
   };
 
+  // === YouTube 合并 ===
+  const curYtCfg = stored.youtube_config || {};
+  const curYtRecords = stored.youtube_records || [];
+  const impYtCfg = impYt.config || {};
+
+  const ytKwSet = new Set(curYtCfg.keywords || []);
+  const ytNewKw = (impYtCfg.keywords || []).filter(k => !ytKwSet.has(k));
+  const ytMergedKw = [...ytNewKw, ...(curYtCfg.keywords || [])];
+
+  const ytWlLower = new Set((curYtCfg.whitelist || []).map(w => w.toLowerCase()));
+  const ytNewWl = (impYtCfg.whitelist || []).filter(w => !ytWlLower.has(w.toLowerCase()));
+  const ytMergedWl = [...ytNewWl, ...(curYtCfg.whitelist || [])];
+
+  const ytRecIds = new Set(curYtRecords.map(r => r.id));
+  const ytNewRecs = (impYt.records || []).filter(r => !ytRecIds.has(r.id));
+  const ytMergedRecords = [...curYtRecords, ...ytNewRecs]
+    .sort((a, b) => new Date(b.time) - new Date(a.time))
+    .slice(0, 500);
+
+  const newYtConfig = {
+    ...curYtCfg,
+    ...impYtCfg,
+    keywords: ytMergedKw,
+    whitelist: ytMergedWl
+  };
+
+  // === 写回 ===
   await chrome.storage.local.set({
-    config: newConfig,
-    blockedAccounts: mergedBlocked,
-    records: mergedRecords,
-    triggerLog: mergedTrigger
+    config: newXConfig,
+    blockedAccounts: xMergedBlocked,
+    records: xMergedRecords,
+    triggerLog: xMergedTrigger,
+    youtube_config: newYtConfig,
+    youtube_records: ytMergedRecords
   });
+
+  // 通知双方 content script
   await sendToContent({ type: 'RELOAD_CONFIG' });
+  await sendToContent({ type: 'YT_RELOAD_CONFIG' });
 
-  // 刷新 UI
-  allRecords = mergedRecords;
-  renderKeywords(mergedKw);
-  renderWhitelist(mergedWl);
-  document.getElementById('keywordCount').textContent = mergedKw.length;
-  document.getElementById('thresholdVal').textContent = newConfig.blockThreshold;
-  currentThreshold = newConfig.blockThreshold;
-  updateThresholdTip(newConfig.blockThreshold);
-  updateStats();
-  renderAllRecordLists();
-
-  showToast(`✅ 已合并 +${newKw.length}词 +${newRecs.length}记录 +${newWl.length}白名单`, '#22c55e');
+  await loadPlatformData();
+  showToast(`✅ 已合并 X:+${xNewKw.length}词/+${xNewRecs.length}记录 YT:+${ytNewKw.length}词/+${ytNewRecs.length}记录`, '#22c55e');
 });
 
-// Reset & Clear all
+// Reset 重置当前平台统计
 document.getElementById('resetBtn').addEventListener('click', async () => {
-  if (!confirm('确认重置所有统计数据？')) return;
-  await sendToContent({ type: 'RESET_COUNT' });
+  if (!confirm(`确认重置 ${currentPlatform === 'x' ? 'X' : 'YouTube'} 的统计数据？`)) return;
+  if (currentPlatform === 'x') {
+    await sendToContent({ type: 'RESET_COUNT' });
+    await chrome.storage.local.set({ records: [], blockedAccounts: [], triggerLog: {} });
+    const cfg = await getPlatformConfig();
+    await setPlatformConfig({ ...cfg, blockedCount: 0 });
+  } else {
+    await setPlatformRecords([]);
+    await notifyReload();
+  }
   allRecords = [];
-  updateStats();
+  updateStats(allRecords);
   renderAllRecordLists();
 });
 
-// Live update
+// 后台消息：当 content script 屏蔽/隐藏了内容
 chrome.runtime.onMessage.addListener(async (msg) => {
-  if (msg.type === 'BLOCKED') {
-    const res = await sendToContent({ type: 'GET_RECORDS' });
-    if (res?.records) { allRecords = res.records; updateStats(); renderAllRecordLists(); }
+  if (msg.type === 'BLOCKED' || msg.type === 'YT_HIDDEN') {
+    await loadPlatformData();
+  }
+});
+
+// storage 变化时刷新（其他 tab 同时操作或者 content script 更新）
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  const relevant = currentPlatform === 'x'
+    ? ['config', 'records', 'blockedAccounts', 'triggerLog']
+    : ['youtube_config', 'youtube_records'];
+  if (Object.keys(changes).some(k => relevant.includes(k))) {
+    loadPlatformData();
   }
 });
 
