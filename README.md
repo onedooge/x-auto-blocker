@@ -3,6 +3,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/github/v/release/onedooge/x-auto-blocker)](https://github.com/onedooge/x-auto-blocker/releases)
 
+**语言 / Language**: 中文 | [English](README.en.md)
+
 自动检测并屏蔽 **X（Twitter）/ YouTube** 上发布不当内容的账号或视频。
 
 ---
@@ -97,7 +99,8 @@ x-auto-blocker/
 ├── popup.js             # 弹窗逻辑
 ├── icons/               # 图标
 ├── LICENSE              # MIT 开源协议
-└── README.md
+├── README.md            # 中文文档
+└── README.en.md         # English docs
 ```
 
 ---
