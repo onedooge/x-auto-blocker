@@ -214,15 +214,16 @@ function renderWhitelist(whitelist) {
   const list = document.getElementById('wlList');
   list.innerHTML = '';
   if (whitelist.length === 0) {
-    list.innerHTML = `<div style="font-size:11px;color:#b8a880;padding:4px 0;">${meta().whitelistEmpty}</div>`;
+    list.innerHTML = `<div style="font-size:11px;color:#b8a888;padding:6px 2px;">${meta().whitelistEmpty}</div>`;
     return;
   }
   whitelist.forEach(handle => {
     const tag = document.createElement('div');
     tag.className = 'kw-tag';
-    tag.style.borderColor = '#22c55e44';
+    tag.style.background = '#dcfce7';
+    tag.style.borderColor = '#86efac';
     const prefix = currentPlatform === 'x' ? '@' : '';
-    tag.innerHTML = `<span style="color:#22c55e">${prefix}${escapeHtml(handle)}</span><button class="kw-remove" data-handle="${escapeHtml(handle)}">×</button>`;
+    tag.innerHTML = `<span style="color:#15803d;font-weight:500;">${prefix}${escapeHtml(handle)}</span><button class="kw-remove" data-handle="${escapeHtml(handle)}">×</button>`;
     list.appendChild(tag);
   });
   list.querySelectorAll('.kw-remove').forEach(btn => {
@@ -436,7 +437,7 @@ async function addWhitelist() {
   renderWhitelist(next);
   input.value = '';
   const prefix = currentPlatform === 'x' ? '@' : '';
-  showToast(`✅ 已添加 ${prefix}${handle} 到白名单`, '#22c55e');
+  showToast(`✅ 已添加 ${prefix}${handle} 到白名单`, '#15803d');
 }
 document.getElementById('wlAdd').addEventListener('click', addWhitelist);
 document.getElementById('wlInput').addEventListener('keydown', e => { if (e.key === 'Enter') addWhitelist(); });
@@ -445,9 +446,15 @@ document.getElementById('wlInput').addEventListener('keydown', e => { if (e.key 
 function showToast(msg, color) {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.style.borderColor = color || '#c9b888';
-  t.style.color = color ? '#fff' : '#4a3d2a';
-  t.style.background = color ? color + '22' : '#fff8e6';
+  if (color) {
+    t.style.background = color;
+    t.style.borderColor = color;
+    t.style.color = '#fff';
+  } else {
+    t.style.background = '#2a1f15';
+    t.style.borderColor = 'transparent';
+    t.style.color = '#fff8eb';
+  }
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2000);
 }
@@ -456,7 +463,7 @@ function showToast(msg, color) {
 document.getElementById('exportBtn').addEventListener('click', async () => {
   const cfg = await getPlatformConfig();
   const keywords = cfg.keywords || [];
-  if (!keywords.length) { showToast('❌ 没有关键词可导出', '#e0415a'); return; }
+  if (!keywords.length) { showToast('❌ 没有关键词可导出', '#d63a52'); return; }
 
   const data = {
     version: '1.0',
@@ -472,7 +479,7 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   a.download = `auto-blocker-${currentPlatform}-keywords-${date}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast(`✅ 已导出 ${keywords.length} 个关键词`, '#22c55e');
+  showToast(`✅ 已导出 ${keywords.length} 个关键词`, '#15803d');
 });
 
 document.getElementById('importBtn').addEventListener('click', () => {
@@ -494,27 +501,27 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
     } else if (json.keywords && Array.isArray(json.keywords)) {
       keywords = json.keywords.filter(k => typeof k === 'string' && k.trim());
     } else {
-      showToast('❌ 格式不支持', '#e0415a'); return;
+      showToast('❌ 格式不支持', '#d63a52'); return;
     }
   } catch {
     keywords = text.split('\n').map(l => l.trim()).filter(Boolean);
   }
 
-  if (keywords.length === 0) { showToast('❌ 未找到关键词', '#e0415a'); return; }
+  if (keywords.length === 0) { showToast('❌ 未找到关键词', '#d63a52'); return; }
 
   const cfg = await getPlatformConfig();
   const existing = cfg.keywords || [];
   const existingSet = new Set(existing);
   const newOnes = keywords.filter(k => !existingSet.has(k));
 
-  if (newOnes.length === 0) { showToast('全部关键词已存在，无需导入', '#f59e0b'); return; }
+  if (newOnes.length === 0) { showToast('全部关键词已存在，无需导入', '#b45309'); return; }
 
   const merged = [...newOnes, ...existing];
   await setPlatformConfig({ keywords: merged });
   await notifyReload();
   renderKeywords(merged);
   document.getElementById('keywordCount').textContent = merged.length;
-  showToast(`✅ 导入 ${newOnes.length} 个新关键词`, '#22c55e');
+  showToast(`✅ 导入 ${newOnes.length} 个新关键词`, '#15803d');
 });
 
 // ==================== 全部备份/恢复（跨平台）====================
@@ -548,7 +555,7 @@ document.getElementById('exportAllBtn').addEventListener('click', async () => {
   URL.revokeObjectURL(url);
   const xKw = data.x.config.keywords?.length || 0;
   const ytKw = data.youtube.config.keywords?.length || 0;
-  showToast(`✅ 全部备份已导出（X:${xKw}词 / YT:${ytKw}词）`, '#22c55e');
+  showToast(`✅ 全部备份已导出（X:${xKw}词 / YT:${ytKw}词）`, '#15803d');
 });
 
 document.getElementById('importAllBtn').addEventListener('click', () => {
@@ -562,10 +569,10 @@ document.getElementById('importAllFile').addEventListener('change', async (e) =>
 
   let json;
   try { json = JSON.parse(await file.text()); }
-  catch { showToast('❌ JSON 格式错误', '#e0415a'); return; }
+  catch { showToast('❌ JSON 格式错误', '#d63a52'); return; }
 
   if (json.type !== 'full') {
-    showToast('❌ 不是全部备份文件', '#e0415a');
+    showToast('❌ 不是全部备份文件', '#d63a52');
     return;
   }
 
@@ -665,7 +672,7 @@ document.getElementById('importAllFile').addEventListener('change', async (e) =>
   await sendToContent({ type: 'YT_RELOAD_CONFIG' });
 
   await loadPlatformData();
-  showToast(`✅ 已合并 X:+${xNewKw.length}词/+${xNewRecs.length}记录 YT:+${ytNewKw.length}词/+${ytNewRecs.length}记录`, '#22c55e');
+  showToast(`✅ 已合并 X:+${xNewKw.length}词/+${xNewRecs.length}记录 YT:+${ytNewKw.length}词/+${ytNewRecs.length}记录`, '#15803d');
 });
 
 // Reset 重置当前平台统计
