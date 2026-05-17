@@ -29,10 +29,10 @@
     if (stored.records) records = stored.records;
     if (stored.triggerLog) triggerLog = stored.triggerLog;
 
-    if (!config.enabled) return;
+    // observer 一直运行，由 config.enabled 在处理函数里门控
     observeTweets();
-    scanExistingTweets();
-    console.log('[X Auto Blocker] 已启动，关键词数量:', config.keywords.length);
+    if (config.enabled) scanExistingTweets();
+    console.log('[X Auto Blocker] 已加载，enabled:', config.enabled, '关键词数量:', config.keywords.length);
   }
 
   // ==================== 关键词检测 ====================
@@ -141,6 +141,7 @@
 
   // ==================== 推文扫描 ====================
   async function processTweet(tweetEl) {
+    if (!config.enabled) return; // 总开关关闭则直接跳过
     if (tweetEl.hasAttribute('data-xblocker-checked')) return;
     tweetEl.setAttribute('data-xblocker-checked', 'true');
 
@@ -332,12 +333,34 @@
     return true;
   });
 
+  // 关掉时把已隐藏的推文还原显示，并清除"已检查"标记
+  function revealHiddenTweets() {
+    document.querySelectorAll('[data-auto-blocked="true"]').forEach(el => {
+      el.style.display = '';
+      el.removeAttribute('data-auto-blocked');
+    });
+    document.querySelectorAll('[data-xblocker-checked]').forEach(el => {
+      el.removeAttribute('data-xblocker-checked');
+    });
+  }
+
   // 当 popup 直接写 storage（如导入备份），同步到运行时配置
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes.config?.newValue) {
+      const wasEnabled = config.enabled;
       config = { ...config, ...changes.config.newValue };
-      scanExistingTweets();
+      if (wasEnabled && !config.enabled) {
+        // 关掉：还原已隐藏的，并清标记
+        revealHiddenTweets();
+        console.log('[X Auto Blocker] 已禁用，还原所有隐藏推文');
+      } else if (!wasEnabled && config.enabled) {
+        // 开启：清标记重新扫
+        document.querySelectorAll('[data-xblocker-checked]').forEach(el => el.removeAttribute('data-xblocker-checked'));
+        scanExistingTweets();
+      } else if (config.enabled) {
+        scanExistingTweets();
+      }
     }
     if (changes.blockedAccounts?.newValue) {
       blockedAccounts = new Set(changes.blockedAccounts.newValue);

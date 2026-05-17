@@ -18,10 +18,10 @@
     if (stored.youtube_config) config = { ...config, ...stored.youtube_config };
     if (stored.youtube_records) records = stored.youtube_records;
 
-    if (!config.enabled) return;
+    // observer 一直运行，由 config.enabled 在处理函数门控
     observe();
-    scan();
-    console.log('[Auto Blocker / YouTube] 已启动，关键词数量:', config.keywords.length);
+    if (config.enabled) scan();
+    console.log('[Auto Blocker / YouTube] 已加载，enabled:', config.enabled, '关键词数量:', config.keywords.length);
   }
 
   // ==================== 视频卡片选择器 ====================
@@ -59,6 +59,7 @@
 
   // ==================== 处理单个视频卡片 ====================
   function processTile(tile) {
+    if (!config.enabled) return; // 总开关关闭则直接跳过
     if (tile.hasAttribute('data-ab-checked')) return;
     tile.setAttribute('data-ab-checked', 'true');
 
@@ -141,12 +142,29 @@
     return true;
   });
 
+  function revealHidden() {
+    document.querySelectorAll('[data-ab-hidden="true"]').forEach(el => {
+      el.style.display = '';
+      el.removeAttribute('data-ab-hidden');
+    });
+    document.querySelectorAll('[data-ab-checked]').forEach(el => el.removeAttribute('data-ab-checked'));
+  }
+
   // storage 变化时同步
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes.youtube_config?.newValue) {
+      const wasEnabled = config.enabled;
       config = { ...config, ...changes.youtube_config.newValue };
-      scan();
+      if (wasEnabled && !config.enabled) {
+        revealHidden();
+        console.log('[Auto Blocker / YouTube] 已禁用，还原所有隐藏视频');
+      } else if (!wasEnabled && config.enabled) {
+        document.querySelectorAll('[data-ab-checked]').forEach(el => el.removeAttribute('data-ab-checked'));
+        scan();
+      } else if (config.enabled) {
+        scan();
+      }
     }
     if (changes.youtube_records?.newValue) {
       records = changes.youtube_records.newValue;
