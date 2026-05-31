@@ -170,18 +170,40 @@
 
     console.log(`[X Auto Blocker] @${handle || '未知'} 触发 ${triggerCount}/${threshold} 次，关键词: ${matchedKeywords.join(', ')}`);
 
-    // 先隐藏推文
-    hideTweet(tweetEl, handle, tweetUrl, matchedKeywords, triggerCount);
-
     // 达到阈值 → 升级为屏蔽
     if (handle && triggerCount >= threshold) {
       console.log(`[X Auto Blocker] @${handle} 24h内触发 ${triggerCount} 次，升级屏蔽`);
       await blockAccount(tweetEl, handle, tweetUrl, matchedKeywords);
     }
+
+    // 屏蔽未成功时，至少先本地隐藏
+    if (!handle || !blockedAccounts.has(handle)) {
+      hideTweet(tweetEl, handle, tweetUrl, matchedKeywords, triggerCount);
+      notifyUpdate();
+    }
   }
 
   function scanExistingTweets() {
     document.querySelectorAll('[data-testid="tweet"]').forEach(t => processTweet(t));
+  }
+
+  function rescanExistingTweets(options = {}) {
+    if (options.reveal) {
+      revealHiddenTweets();
+    } else {
+      document.querySelectorAll('[data-xblocker-checked]').forEach(el => {
+        el.removeAttribute('data-xblocker-checked');
+      });
+    }
+    if (config.enabled) scanExistingTweets();
+  }
+
+  function configChangeNeedsRescan(prev, next) {
+    const sig = list => JSON.stringify((list || []).map(x => String(x).toLowerCase()));
+    return (prev.enabled !== next.enabled)
+      || ((prev.blockThreshold || BLOCK_THRESHOLD) !== (next.blockThreshold || BLOCK_THRESHOLD))
+      || (sig(prev.keywords) !== sig(next.keywords))
+      || (sig(prev.whitelist) !== sig(next.whitelist));
   }
 
   // ==================== MutationObserver ====================
@@ -215,6 +237,14 @@
       triggerCount: triggerCount || null,
       time: new Date().toISOString()
     };
+    if (tweetUrl) {
+      const existing = records.find(r => r.action === action && r.tweetUrl === tweetUrl);
+      if (existing) {
+        Object.assign(existing, record, { id: existing.id });
+        chrome.storage.local.set({ records });
+        return;
+      }
+    }
     records.unshift(record);
     if (records.length > 500) records = records.slice(0, 500);
     chrome.storage.local.set({ records });
@@ -245,14 +275,15 @@
       config = { ...config, ...msg.config };
       saveConfig();
       sendResponse({ ok: true });
-      if (msg.config.enabled) scanExistingTweets();
+      if (config.enabled) rescanExistingTweets({ reveal: true });
+      else revealHiddenTweets();
     }
 
     if (msg.type === 'ADD_KEYWORD') {
       if (!config.keywords.includes(msg.keyword)) {
         config.keywords.unshift(msg.keyword); // 新增的放最前面
         saveConfig();
-        scanExistingTweets();
+        rescanExistingTweets();
       }
       sendResponse({ keywords: config.keywords });
     }
@@ -260,6 +291,7 @@
     if (msg.type === 'REMOVE_KEYWORD') {
       config.keywords = config.keywords.filter(k => k !== msg.keyword);
       saveConfig();
+      rescanExistingTweets({ reveal: true });
       sendResponse({ keywords: config.keywords });
     }
 
@@ -277,6 +309,7 @@
       if (handle && !config.whitelist.some(w => w.toLowerCase() === handle.toLowerCase())) {
         config.whitelist.push(handle);
         saveConfig();
+        rescanExistingTweets({ reveal: true });
       }
       sendResponse({ whitelist: config.whitelist });
     }
@@ -284,6 +317,7 @@
     if (msg.type === 'REMOVE_WHITELIST') {
       config.whitelist = (config.whitelist || []).filter(w => w.toLowerCase() !== msg.handle.toLowerCase());
       saveConfig();
+      rescanExistingTweets({ reveal: true });
       sendResponse({ whitelist: config.whitelist });
     }
 
@@ -324,7 +358,8 @@
     if (msg.type === 'RELOAD_CONFIG') {
       chrome.storage.local.get('config').then(stored => {
         if (stored.config) config = { ...config, ...stored.config };
-        scanExistingTweets();
+        if (config.enabled) rescanExistingTweets({ reveal: true });
+        else revealHiddenTweets();
         sendResponse({ ok: true });
       });
       return true;
@@ -348,18 +383,20 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes.config?.newValue) {
-      const wasEnabled = config.enabled;
+      const prevConfig = { ...config };
       config = { ...config, ...changes.config.newValue };
-      if (wasEnabled && !config.enabled) {
-        // 关掉：还原已隐藏的，并清标记
-        revealHiddenTweets();
-        console.log('[X Auto Blocker] 已禁用，还原所有隐藏推文');
-      } else if (!wasEnabled && config.enabled) {
-        // 开启：清标记重新扫
-        document.querySelectorAll('[data-xblocker-checked]').forEach(el => el.removeAttribute('data-xblocker-checked'));
-        scanExistingTweets();
-      } else if (config.enabled) {
-        scanExistingTweets();
+      if (configChangeNeedsRescan(prevConfig, config)) {
+        const wasEnabled = prevConfig.enabled;
+        if (wasEnabled && !config.enabled) {
+          // 关掉：还原已隐藏的，并清标记
+          revealHiddenTweets();
+          console.log('[X Auto Blocker] 已禁用，还原所有隐藏推文');
+        } else if (!wasEnabled && config.enabled) {
+          // 开启：清标记重新扫
+          rescanExistingTweets();
+        } else if (config.enabled) {
+          rescanExistingTweets({ reveal: true });
+        }
       }
     }
     if (changes.blockedAccounts?.newValue) {

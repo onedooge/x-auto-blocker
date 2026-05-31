@@ -85,6 +85,7 @@
       channel: channel || '未知频道',
       matchedKeywords: matched
     });
+    notifyUpdate();
 
     console.log(`[Auto Blocker / YouTube] 隐藏: ${title} (${channel}) [${matched.join(',')}]`);
   }
@@ -93,6 +94,22 @@
     for (const sel of TILE_SELECTORS) {
       document.querySelectorAll(sel).forEach(processTile);
     }
+  }
+
+  function rescan(options = {}) {
+    if (options.reveal) {
+      revealHidden();
+    } else {
+      document.querySelectorAll('[data-ab-checked]').forEach(el => el.removeAttribute('data-ab-checked'));
+    }
+    if (config.enabled) scan();
+  }
+
+  function configChangeNeedsRescan(prev, next) {
+    const sig = list => JSON.stringify((list || []).map(x => String(x).toLowerCase()));
+    return (prev.enabled !== next.enabled)
+      || (sig(prev.keywords) !== sig(next.keywords))
+      || (sig(prev.whitelist) !== sig(next.whitelist));
   }
 
   // ==================== MutationObserver ====================
@@ -113,6 +130,13 @@
 
   // ==================== 记录 ====================
   function addRecord({ title, channel, matchedKeywords }) {
+    const existing = records.find(r => r.title === title && r.channel === channel);
+    if (existing) {
+      existing.matchedKeywords = matchedKeywords;
+      existing.time = new Date().toISOString();
+      chrome.storage.local.set({ youtube_records: records });
+      return;
+    }
     const record = {
       id: Date.now() + Math.random(),
       title,
@@ -125,6 +149,10 @@
     chrome.storage.local.set({ youtube_records: records });
   }
 
+  function notifyUpdate() {
+    chrome.runtime.sendMessage({ type: 'YT_HIDDEN' }).catch(() => {});
+  }
+
   // ==================== 消息监听 ====================
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'YT_GET_STATUS') {
@@ -134,7 +162,8 @@
       chrome.storage.local.get(['youtube_config', 'youtube_records']).then(stored => {
         if (stored.youtube_config) config = { ...config, ...stored.youtube_config };
         if (stored.youtube_records) records = stored.youtube_records;
-        scan();
+        if (config.enabled) rescan({ reveal: true });
+        else revealHidden();
         sendResponse({ ok: true });
       });
       return true;
@@ -154,16 +183,18 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes.youtube_config?.newValue) {
-      const wasEnabled = config.enabled;
+      const prevConfig = { ...config };
       config = { ...config, ...changes.youtube_config.newValue };
-      if (wasEnabled && !config.enabled) {
-        revealHidden();
-        console.log('[Auto Blocker / YouTube] 已禁用，还原所有隐藏视频');
-      } else if (!wasEnabled && config.enabled) {
-        document.querySelectorAll('[data-ab-checked]').forEach(el => el.removeAttribute('data-ab-checked'));
-        scan();
-      } else if (config.enabled) {
-        scan();
+      if (configChangeNeedsRescan(prevConfig, config)) {
+        const wasEnabled = prevConfig.enabled;
+        if (wasEnabled && !config.enabled) {
+          revealHidden();
+          console.log('[Auto Blocker / YouTube] 已禁用，还原所有隐藏视频');
+        } else if (!wasEnabled && config.enabled) {
+          rescan();
+        } else if (config.enabled) {
+          rescan({ reveal: true });
+        }
       }
     }
     if (changes.youtube_records?.newValue) {
