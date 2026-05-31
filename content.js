@@ -6,6 +6,19 @@
 
   const BLOCK_THRESHOLD = 10;   // 触发次数阈值
   const BLOCK_WINDOW_MS = 24 * 60 * 60 * 1000; // 24小时
+  const TRANSLATED_MARKERS = [
+    'show original',
+    'see original',
+    'view original',
+    'translated from',
+    'translated by',
+    '查看原文',
+    '显示原文',
+    '看原文',
+    '翻译自',
+    '已翻译',
+    '自动翻译'
+  ];
 
   // ==================== 状态管理 ====================
   let config = {
@@ -42,10 +55,51 @@
     return config.keywords.filter(kw => lowerText.includes(kw.toLowerCase()));
   }
 
+  function hasChineseText(text) {
+    return /[\u3400-\u9fff]/.test(text || '');
+  }
+
+  function isChineseLang(lang) {
+    return /^(zh|cmn|yue)(-|$)/i.test(lang || '');
+  }
+
+  function getTweetTextElement(tweetEl) {
+    return tweetEl.querySelector('[data-testid="tweetText"]');
+  }
+
+  function getTweetBodyText(tweetEl) {
+    const textEl = getTweetTextElement(tweetEl);
+    return textEl ? (textEl.innerText || textEl.textContent || '') : '';
+  }
+
+  function getTranslationMarkerText(tweetEl) {
+    const tweetTextEl = getTweetTextElement(tweetEl);
+    const nodes = tweetEl.querySelectorAll('button, a, [role="button"], [aria-label]');
+    const parts = [];
+    nodes.forEach(node => {
+      if (tweetTextEl && tweetTextEl.contains(node)) return;
+      parts.push(node.getAttribute('aria-label') || '');
+      parts.push(node.innerText || node.textContent || '');
+    });
+    return parts.join(' ').replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  function isLikelyTranslatedTweet(tweetEl) {
+    const textEl = getTweetTextElement(tweetEl);
+    if (!textEl) return false;
+
+    const bodyText = getTweetBodyText(tweetEl);
+    const lang = (textEl.getAttribute('lang') || '').toLowerCase();
+
+    if (hasChineseText(bodyText) && lang && !isChineseLang(lang)) return true;
+
+    const markerText = getTranslationMarkerText(tweetEl);
+    return TRANSLATED_MARKERS.some(marker => markerText.includes(marker));
+  }
+
   function getTweetText(tweetEl) {
-    const textEl = tweetEl.querySelector('[data-testid="tweetText"]');
     const userEl = tweetEl.querySelector('[data-testid="User-Name"]');
-    return (textEl ? textEl.innerText : '') + ' ' + (userEl ? userEl.innerText : '');
+    return getTweetBodyText(tweetEl) + ' ' + (userEl ? userEl.innerText : '');
   }
 
   function getAccountHandle(tweetEl) {
@@ -145,6 +199,11 @@
     if (tweetEl.hasAttribute('data-xblocker-checked')) return;
     tweetEl.setAttribute('data-xblocker-checked', 'true');
 
+    if (isLikelyTranslatedTweet(tweetEl)) {
+      console.log('[X Auto Blocker] 检测到 X 自动翻译内容，跳过关键词匹配');
+      return;
+    }
+
     const text = getTweetText(tweetEl);
     const matchedKeywords = getMatchedKeywords(text);
     if (matchedKeywords.length === 0) return;
@@ -161,6 +220,7 @@
     // 已屏蔽账号：直接隐藏，不重复操作
     if (handle && blockedAccounts.has(handle)) {
       tweetEl.style.display = 'none';
+      tweetEl.setAttribute('data-auto-blocked', 'true');
       return;
     }
 

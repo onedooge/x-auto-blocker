@@ -42,6 +42,7 @@ Switch platforms via the toggle at the top of the popup. Each platform maintains
 - 3-column grid layout, newest at top
 - Per-platform export / import
 - X matches tweet text and username; YouTube matches video title and channel name
+- X auto-translated text is skipped for keyword matching; original Chinese posts still match normally
 
 ### 🛡️ Whitelist
 
@@ -83,6 +84,7 @@ History of locally-hidden content (X tweets / YouTube videos). On X, each entry 
 - For X, start with a higher threshold (e.g. 20) and lower it after observing for a while.
 - All data lives in the browser's `chrome.storage.local`. Switching browsers or uninstalling the extension wipes the data — use "Full Backup" regularly.
 - When upgrading the extension, **do not uninstall and reinstall**. Replace the source files and click the 🔄 reload button on `edge://extensions` instead — your data stays intact.
+- Since 1.2.1, maintenance continues through Codex after the Claude account became unavailable, adding X auto-translation filtering.
 
 ---
 

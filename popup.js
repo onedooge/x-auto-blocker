@@ -74,6 +74,33 @@ function escapeHtml(str) {
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function normalizeTextList(items) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items || []) {
+    const value = String(item).trim();
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+function mergeTextLists(incoming, existing) {
+  const current = normalizeTextList(existing);
+  const seen = new Set(current.map(item => item.toLowerCase()));
+  const newOnes = [];
+  for (const item of normalizeTextList(incoming)) {
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    newOnes.push(item);
+  }
+  return { newOnes, merged: [...newOnes, ...current] };
+}
+
 function setEnableLabel(enabled) {
   document.getElementById('enableLabel').textContent = enabled ? '开启' : '关闭';
 }
@@ -411,8 +438,8 @@ async function addKeyword() {
   const kw = input.value.trim();
   if (!kw) return;
   const cfg = await getPlatformConfig();
-  const existing = cfg.keywords || [];
-  if (existing.includes(kw)) { input.value = ''; return; }
+  const existing = normalizeTextList(cfg.keywords || []);
+  if (existing.some(item => item.toLowerCase() === kw.toLowerCase())) { input.value = ''; return; }
   const next = [kw, ...existing];
   await setPlatformConfig({ keywords: next });
   await notifyReload();
@@ -429,7 +456,7 @@ async function addWhitelist() {
   const handle = input.value.replace(/^@/, '').trim();
   if (!handle) return;
   const cfg = await getPlatformConfig();
-  const existing = cfg.whitelist || [];
+  const existing = normalizeTextList(cfg.whitelist || []);
   if (existing.some(w => w.toLowerCase() === handle.toLowerCase())) { input.value = ''; return; }
   const next = [handle, ...existing];
   await setPlatformConfig({ whitelist: next });
@@ -497,26 +524,23 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
   try {
     const json = JSON.parse(text);
     if (Array.isArray(json)) {
-      keywords = json.filter(k => typeof k === 'string' && k.trim());
+      keywords = normalizeTextList(json);
     } else if (json.keywords && Array.isArray(json.keywords)) {
-      keywords = json.keywords.filter(k => typeof k === 'string' && k.trim());
+      keywords = normalizeTextList(json.keywords);
     } else {
       showToast('❌ 格式不支持', '#d63a52'); return;
     }
   } catch {
-    keywords = text.split('\n').map(l => l.trim()).filter(Boolean);
+    keywords = normalizeTextList(text.split('\n'));
   }
 
   if (keywords.length === 0) { showToast('❌ 未找到关键词', '#d63a52'); return; }
 
   const cfg = await getPlatformConfig();
-  const existing = cfg.keywords || [];
-  const existingSet = new Set(existing);
-  const newOnes = keywords.filter(k => !existingSet.has(k));
+  const { newOnes, merged } = mergeTextLists(keywords, cfg.keywords || []);
 
   if (newOnes.length === 0) { showToast('全部关键词已存在，无需导入', '#b45309'); return; }
 
-  const merged = [...newOnes, ...existing];
   await setPlatformConfig({ keywords: merged });
   await notifyReload();
   renderKeywords(merged);
@@ -594,13 +618,9 @@ document.getElementById('importAllFile').addEventListener('change', async (e) =>
   const curXTrigger = stored.triggerLog || {};
   const impXCfg = impX.config || {};
 
-  const xKwSet = new Set(curXCfg.keywords || []);
-  const xNewKw = (impXCfg.keywords || []).filter(k => !xKwSet.has(k));
-  const xMergedKw = [...xNewKw, ...(curXCfg.keywords || [])];
+  const { newOnes: xNewKw, merged: xMergedKw } = mergeTextLists(impXCfg.keywords || [], curXCfg.keywords || []);
 
-  const xWlLower = new Set((curXCfg.whitelist || []).map(w => w.toLowerCase()));
-  const xNewWl = (impXCfg.whitelist || []).filter(w => !xWlLower.has(w.toLowerCase()));
-  const xMergedWl = [...xNewWl, ...(curXCfg.whitelist || [])];
+  const { merged: xMergedWl } = mergeTextLists(impXCfg.whitelist || [], curXCfg.whitelist || []);
 
   const xMergedBlocked = [...new Set([...curXBlocked, ...(impX.blockedAccounts || [])])];
 
@@ -636,13 +656,9 @@ document.getElementById('importAllFile').addEventListener('change', async (e) =>
   const curYtRecords = stored.youtube_records || [];
   const impYtCfg = impYt.config || {};
 
-  const ytKwSet = new Set(curYtCfg.keywords || []);
-  const ytNewKw = (impYtCfg.keywords || []).filter(k => !ytKwSet.has(k));
-  const ytMergedKw = [...ytNewKw, ...(curYtCfg.keywords || [])];
+  const { newOnes: ytNewKw, merged: ytMergedKw } = mergeTextLists(impYtCfg.keywords || [], curYtCfg.keywords || []);
 
-  const ytWlLower = new Set((curYtCfg.whitelist || []).map(w => w.toLowerCase()));
-  const ytNewWl = (impYtCfg.whitelist || []).filter(w => !ytWlLower.has(w.toLowerCase()));
-  const ytMergedWl = [...ytNewWl, ...(curYtCfg.whitelist || [])];
+  const { merged: ytMergedWl } = mergeTextLists(impYtCfg.whitelist || [], curYtCfg.whitelist || []);
 
   const ytRecIds = new Set(curYtRecords.map(r => r.id));
   const ytNewRecs = (impYt.records || []).filter(r => !ytRecIds.has(r.id));
@@ -677,7 +693,8 @@ document.getElementById('importAllFile').addEventListener('change', async (e) =>
 
 // Reset 重置当前平台统计
 document.getElementById('resetBtn').addEventListener('click', async () => {
-  if (!confirm(`确认重置 ${currentPlatform === 'x' ? 'X' : 'YouTube'} 的统计数据？`)) return;
+  const label = currentPlatform === 'x' ? 'X 的统计、记录、触发次数和已屏蔽账号列表' : 'YouTube 的隐藏记录';
+  if (!confirm(`确认重置 ${label}？关键词和白名单会保留。`)) return;
   if (currentPlatform === 'x') {
     await sendToContent({ type: 'RESET_COUNT' });
     await chrome.storage.local.set({ records: [], blockedAccounts: [], triggerLog: {} });
